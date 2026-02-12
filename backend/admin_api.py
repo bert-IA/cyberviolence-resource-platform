@@ -84,7 +84,7 @@ async def root():
     """Route racine - Documentation API"""
     return {
         "status": "ok",
-        "service": "StopCyberViolences - Admin API",
+        "service": "Resource Discovery Admin API",
         "version": "2.0.0",
         "documentation": "/docs",
         "health": "/health",

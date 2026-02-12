@@ -54,7 +54,7 @@ LLM_PROVIDERS = [
 # === CONSTANTES API ===
 DEFAULT_LLM_PROVIDER = "gemini"
 API_VERSION = "2.0.0"
-API_TITLE = "StopCyberViolences - Critical Resources Admin API"
+API_TITLE = "resource discovery Critical admin API"
 API_DESCRIPTION = "API d'administration des ressources critiques avec système de validation dual"
 
 # === STRATÉGIE LEAN ===
