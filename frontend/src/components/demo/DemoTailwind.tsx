@@ -7,13 +7,13 @@ interface DemoTailwindProps {
     onAppClick: () => void  // 💡 Fonction pour revenir à l'app principale
 }
 
-type PageType = 'colors' | 'functions'
+type DemoPageType = 'colors' | 'functions'
 
 
 export function DemoTailwind({ onAppClick }: DemoTailwindProps) {
-    const [currentPage, setCurrentPage] = useState<PageType>('colors')
+    const [currentPage, setCurrentPage] = useState<DemoPageType>('colors')
 
-    const navigationItems: NavigationItem<PageType>[] = [
+    const navigationItems: NavigationItem<DemoPageType>[] = [
         { label: 'gestion couleurs', value: 'colors' },
         { label: 'gestion mise en page', value: 'functions' }
     ]
@@ -30,7 +30,7 @@ export function DemoTailwind({ onAppClick }: DemoTailwindProps) {
                 onDemoClick={onAppClick}
                 navigationItems={navigationItems}
                 currentPage={currentPage}
-                onNavigate={(page: PageType) => setCurrentPage(page)}
+                onNavigate={setCurrentPage}
             />
             <main>
                 {currentPage === 'colors' && <TestColor />}

@@ -1,6 +1,6 @@
 import { useDiscoverResources } from '../hooks/useDiscoverResources'
 import { DiscoveryForm } from '../components/features/DiscoveryForm'  // Défini dans Étape 3 partie 1
-import { ResourcesList } from '../components/features/ResourcesList'
+import { DiscoveredResourcesList } from '../components/features/DiscoveredResourcesList'
 import { LoadingSpinner } from '../components/ui/LoadingSpinner'
 import { ErrorMessage } from '../components/ui/ErrorMessage'
 
@@ -59,7 +59,7 @@ export function DiscoveryPage() {
                                 )}
                             </div>
 
-                            <ResourcesList resources={discovery.data.newly_discovered} />
+                            <DiscoveredResourcesList resources={discovery.data.newly_discovered || []} />
                         </>
                     )}
 

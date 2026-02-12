@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { API_BASE_URL, AUTH_TOKEN } from '../services/api'
 
 interface Country {
     country_name: string
@@ -19,8 +20,8 @@ export function useCountriesConfig() {
     return useQuery({
         queryKey: ['config', 'countries'],
         queryFn: async () => {
-            const response = await fetch('http://localhost:8000/geographic/countries', {
-                headers: { 'Authorization': 'Bearer admin-token-2024' }
+            const response = await fetch(`${API_BASE_URL}/geographic/countries`, {
+                headers: { 'Authorization': AUTH_TOKEN }
             })
 
             if (!response.ok) {

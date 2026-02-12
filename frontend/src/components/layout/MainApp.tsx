@@ -18,12 +18,12 @@ interface MainAppProps {
     onDemoClick: () => void
 }
 
-type PageType = 'configuration' | 'discovery'
+type MainAppPageType = 'configuration' | 'discovery'
 
 export function MainApp({ onDemoClick }: MainAppProps) {
 
-    const [currentPage, setCurrentPage] = useState<PageType>('configuration')
-    const navigationItems: NavigationItem<PageType>[] = [
+    const [currentPage, setCurrentPage] = useState<MainAppPageType>('configuration')
+    const navigationItems: NavigationItem<MainAppPageType>[] = [
         { label: 'Configuration Pays', value: 'configuration' },
         { label: 'Découverte Ressource', value: 'discovery' }
     ]
@@ -33,13 +33,13 @@ export function MainApp({ onDemoClick }: MainAppProps) {
             <div className="min-h-screen bg-gray-50">
                 {/* Navigation Tabs */}
                 <Header
-                    title="Interface de découvertes des ressources"
+                    title="INTERFACE DE DECOUVERTE DES RESSOURCES"
                     userName='Admin'
                     buttonLabel='Démo Tailwind'
                     onDemoClick={onDemoClick}
                     navigationItems={navigationItems}
                     currentPage={currentPage}
-                    onNavigate={(page: PageType) => setCurrentPage(page)}
+                    onNavigate={setCurrentPage}
                 />
 
                 {/* Contenu de la page active */}

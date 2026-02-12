@@ -1958,12 +1958,12 @@ if __name__ == "__main__":
     import uvicorn
     
     logger.info("🚀 Démarrage du serveur Admin API...")
-    logger.info(f"📍 Écoute sur http://0.0.0.0:8001")
-    logger.info(f"📚 Documentation: http://localhost:8001/docs")
+    logger.info(f"📍 Écoute sur http://0.0.0.0:8000")
+    logger.info(f"📚 Documentation: http://localhost:8000/docs")
     
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=8001,
+        port=8000,
         log_level="info"
     )

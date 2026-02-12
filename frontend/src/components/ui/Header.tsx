@@ -35,25 +35,28 @@ export function Header<TPage extends string>({
                         <h1 className="text-3xl font-bold text-gray-900">
                             {title}
                         </h1>
-                        {navigationItems && navigationItems.length > 0 && onNavigate && (
-                            <nav className="flex gap-2">
-                                {navigationItems.map((item) => (
-                                    <Button
-                                        key={item.value}
-                                        label={item.label}
-                                        onClick={() => onNavigate(item.value)}
-                                        variant={currentPage === item.value ? 'tab-active' : 'tab'}
-                                    />
-                                ))}
-                            </nav>
-                        )}
+                        {navigationItems &&
+                            navigationItems.length > 0 &&
+                            onNavigate &&
+                            currentPage && (
+                                <nav className="flex gap-2">
+                                    {navigationItems.map((item) => (
+                                        <Button
+                                            key={item.value}
+                                            label={item.label}
+                                            onClick={() => onNavigate(item.value)}
+                                            variant={currentPage === item.value ? 'tab-active' : 'tab'}
+                                        />
+                                    ))}
+                                </nav>
+                            )}
                     </div>
 
                     {/* Partie droite : Bouton retour + User (centré verticalement) */}
                     <div className="flex items-center gap-2">
                         {onDemoClick && (
                             <Button
-                                label={buttonLabel ?? '🎨 Démo Tailwind'}
+                                label={buttonLabel}
                                 onClick={onDemoClick}
                                 variant='secondary'
                             />

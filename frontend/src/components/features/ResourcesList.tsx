@@ -7,7 +7,8 @@ interface ResourcesListProps {
 }
 
 export function ResourcesList({ resources, renderActions }: ResourcesListProps) {
-    if (resources.length === 0) {
+    // Protection contre undefined/null
+    if (!resources || resources.length === 0) {
         return (
             <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-lg">
                 <span className="text-4xl mb-2 block">📭</span>
