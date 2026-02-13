@@ -1,0 +1,2 @@
+# Dépendances pour les tests
+requests>=2.31.0

@@ -243,6 +243,187 @@ async def set_llm_provider(provider: str, admin_id: str = Depends(verify_admin_t
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Fournisseur invalide: {provider}")
 
+# === ENDPOINTS CONFIGURATION PAYS/LANGUES (CRUD) ===
+
+from core.config_manager import (
+    get_config_manager, 
+    CountryConfig, 
+    LanguageConfig,
+    handle_config_error
+)
+
+@app.get("/admin/config/countries-languages")
+async def get_all_countries_languages(admin_id: str = Depends(verify_admin_token)):
+    """
+    Récupère la configuration complète pays/langues
+    GET /admin/config/countries-languages
+    """
+    try:
+        config_manager = get_config_manager()
+        languages = config_manager.get_all_languages()
+        
+        return {
+            "success": True,
+            "message": "Configuration récupérée",
+            "languages": {
+                code: lang.model_dump() for code, lang in languages.items()
+            },
+            "total_languages": len(languages),
+            "total_countries": sum(len(lang.countries) for lang in languages.values())
+        }
+    except Exception as e:
+        raise handle_config_error(e, "récupération configuration")
+
+@app.get("/admin/config/countries-languages/{language}")
+async def get_language_config(language: str, admin_id: str = Depends(verify_admin_token)):
+    """
+    Récupère la configuration d'une langue spécifique
+    GET /admin/config/countries-languages/FR
+    """
+    try:
+        config_manager = get_config_manager()
+        lang_config = config_manager.get_language(language)
+        
+        if not lang_config:
+            raise HTTPException(status_code=404, detail=f"Langue {language} non trouvée")
+        
+        return {
+            "success": True,
+            "language": language.upper(),
+            "config": lang_config.model_dump()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise handle_config_error(e, f"récupération langue {language}")
+
+@app.put("/admin/config/countries-languages/{language}")
+async def update_language_config(
+    language: str,
+    config: LanguageConfig,
+    admin_id: str = Depends(verify_admin_token)
+):
+    """
+    Met à jour ou crée la configuration complète d'une langue
+    PUT /admin/config/countries-languages/FR
+    Body: { "name": "Français", "code": "FR", "countries": [...] }
+    """
+    try:
+        config_manager = get_config_manager()
+        
+        # Validation code langue cohérent
+        if config.code.upper() != language.upper():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Code langue incohérent: {config.code} != {language}"
+            )
+        
+        config_manager.update_language(language, config)
+        
+        return {
+            "success": True,
+            "message": f"Langue {language} mise à jour",
+            "language": language.upper(),
+            "countries_count": len(config.countries)
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise handle_config_error(e, f"mise à jour langue {language}")
+
+@app.post("/admin/config/countries-languages/{language}/countries")
+async def add_country_to_language(
+    language: str,
+    country: CountryConfig,
+    admin_id: str = Depends(verify_admin_token)
+):
+    """
+    Ajoute un pays à une langue
+    POST /admin/config/countries-languages/FR/countries
+    Body: { "country_name": "France", "country_code": "FR", "flag": "🇫🇷", ... }
+    """
+    try:
+        config_manager = get_config_manager()
+        config_manager.add_country_to_language(language, country)
+        
+        return {
+            "success": True,
+            "message": f"Pays {country.country_code} ajouté à {language}",
+            "language": language.upper(),
+            "country": country.model_dump()
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise handle_config_error(e, f"ajout pays à {language}")
+
+@app.delete("/admin/config/countries-languages/{language}/countries/{country_code}")
+async def remove_country_from_language(
+    language: str,
+    country_code: str,
+    admin_id: str = Depends(verify_admin_token)
+):
+    """
+    Supprime un pays d'une langue
+    DELETE /admin/config/countries-languages/FR/countries/FR
+    """
+    try:
+        config_manager = get_config_manager()
+        config_manager.remove_country_from_language(language, country_code)
+        
+        return {
+            "success": True,
+            "message": f"Pays {country_code} supprimé de {language}",
+            "language": language.upper(),
+            "country_code": country_code.upper()
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise handle_config_error(e, f"suppression pays {country_code} de {language}")
+
+@app.delete("/admin/config/countries-languages/{language}")
+async def delete_language(
+    language: str,
+    admin_id: str = Depends(verify_admin_token)
+):
+    """
+    Supprime une langue complète
+    DELETE /admin/config/countries-languages/FR
+    """
+    try:
+        config_manager = get_config_manager()
+        config_manager.delete_language(language)
+        
+        return {
+            "success": True,
+            "message": f"Langue {language} supprimée",
+            "language": language.upper()
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise handle_config_error(e, f"suppression langue {language}")
+
+@app.get("/admin/config/stats")
+async def get_config_stats(admin_id: str = Depends(verify_admin_token)):
+    """
+    Récupère les statistiques de configuration
+    GET /admin/config/stats
+    """
+    try:
+        config_manager = get_config_manager()
+        stats = config_manager.get_stats()
+        
+        return {
+            "success": True,
+            "stats": stats
+        }
+    except Exception as e:
+        raise handle_config_error(e, "récupération statistiques")
+
 # === ENDPOINTS DÉCOUVERTE GÉOGRAPHIQUE ===
 
 @app.get("/geographic/countries-dynamic/{language}")

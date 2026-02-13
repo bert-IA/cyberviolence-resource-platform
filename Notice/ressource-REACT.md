@@ -5284,22 +5284,3215 @@ On va apprendre :
 **Statut** : 📝 Document prêt pour implémentation  
 **Prochaine session** : Étape 4 - Routing et Navigation
 
+---
 
-temp;
-import Header from '../ui/Header'
-import { ConfigurationPage } from '../../pages/ConfigurationPage'
+## 🗓️ ÉTAPE 4 - React Router & Navigation Multi-Pages 🧭
 
-interface MainAppProps {
-    onDemoClick: () => void  // 💡 Fonction pour afficher la démo
+### 🎯 Objectif de l'étape
+
+Transformer ton application d'un **système à onglets** en une **vraie SPA** avec :
+- 🧭 **Navigation par URL** : Chaque page a sa propre URL (`/discovery`, `/validation`, etc.)
+- 🔗 **Navigation fluide** : Aucun rechargement complet de la page
+- 📱 **Boutons Précédent/Suivant** du navigateur fonctionnels
+- 🗂️ **Layout partagé** : Header/Sidebar communs à toutes les pages
+- 📍 **Pages dynamiques** : `/resource/:id` pour afficher les détails
+
+---
+
+### 📚 Concepts Clés à Maîtriser
+
+#### 1. **SPA vs Application Multi-Pages Classique**
+
+**🤔 Question** : Quelle est la différence entre une SPA et un site web classique ?
+
+##### Schéma Comparatif : Multi-Pages vs SPA
+
+```mermaid
+flowchart TB
+    subgraph classic["🌐 Application Multi-Pages Classique"]
+        A1["👤 User sur /index.html"] --> B1{"🖱️ Clique 'Validation'"}
+        B1 --> C1["📡 Requête HTTP GET /validation.html"]
+        C1 --> D1["🖥️ Serveur répond avec HTML complet"]
+        D1 --> E1["🔄 RECHARGEMENT COMPLET"]
+        E1 --> F1["❌ Flash blanc<br/>❌ Header/Footer rechargés<br/>❌ Scripts re-téléchargés<br/>❌ État perdu"]
+        F1 --> G1["📄 /validation.html affiché"]
+    end
+    
+    subgraph spa["⚡ Single Page Application (SPA)"]
+        A2["👤 User sur /"] --> B2{"🖱️ Clique 'Validation'"}
+        B2 --> C2["🎯 React Router intercepte"]
+        C2 --> D2["📝 Change URL → /validation"]
+        D2 --> E2["🔄 Remplace composant dans Outlet"]
+        E2 --> F2["✅ Instantané<br/>✅ Pas de flash<br/>✅ Header/Sidebar restent<br/>✅ État préservé"]
+        F2 --> G2["🎨 ValidationPage dans Outlet"]
+    end
+    
+    style classic fill:#ffe6e6
+    style spa fill:#e6ffe6
+    style F1 fill:#ffcccc
+    style F2 fill:#ccffcc
+```
+
+**📖 Lecture du schéma** :
+- **Flux rouge (Multi-Pages)** : Chaque navigation = requête serveur complète
+- **Flux vert (SPA)** : Navigation = JavaScript qui change le composant affiché
+
+##### Application Multi-Pages Classique (Before React)
+
+```
+┌─────────────┐
+│ /index.html │  ← User clique "Validation"
+└──────┬──────┘
+       │
+       │ 🌐 Requête HTTP GET /validation.html
+       ▼
+┌──────────────────┐
+│ Serveur répond   │
+│ Nouveau HTML     │  ← Toute la page rechargée
+└──────┬───────────┘
+       │
+       ▼
+🔄 Page complète rechargée
+   ❌ Flash blanc
+   ❌ Header/Footer rechargés
+   ❌ Scripts rechargés
+   ❌ Lent
+```
+
+**Problèmes** :
+- ❌ **Rechargement complet** à chaque clic
+- ❌ **Flash blanc** entre les pages
+- ❌ **Perte d'état** : Si tu as des données en mémoire, elles disparaissent
+- ❌ **Lent** : Chaque page = nouvelle requête serveur + re-parsing HTML/CSS/JS
+
+---
+
+##### SPA (Single Page Application) avec React Router
+
+```
+┌──────────────────┐
+│ /               │  ← Une seule page HTML chargée
+│ App.tsx         │     (index.html)
+│ ├─ Header       │
+│ ├─ Sidebar      │
+│ └─ <Outlet />   │  ← Zone dynamique
+└──────┬───────────┘
+       │
+       │ User clique "Validation"
+       ▼
+┌──────────────────┐
+│ React Router     │  ⚡ PAS de requête serveur !
+│ change l'URL     │     Juste du JavaScript
+│ /validation      │
+└──────┬───────────┘
+       │
+       ▼
+┌──────────────────┐
+│ Outlet affiche   │  🎯 Seule cette partie change
+│ ValidationPage   │     Header/Sidebar restent
+└──────────────────┘
+```
+
+**Avantages** :
+- ✅ **Navigation instantanée** : Juste du JavaScript, pas de requête HTTP
+- ✅ **Pas de flash blanc** : Composants sont simplement remplacés
+- ✅ **État préservé** : Les données globales (TanStack Query cache) restent
+- ✅ **UX fluide** : Animations et transitions possibles
+- ✅ **Performance** : Charger une fois, naviguer à l'infini
+
+---
+
+#### 2. **React Router v6 - Le Routeur Moderne**
+
+**React Router** est la bibliothèque standard pour gérer la navigation dans React.
+
+##### Schéma : Architecture de React Router
+
+```mermaid
+flowchart TB
+    subgraph app["🎯 Ton Application React"]
+        BR["🧭 BrowserRouter<br/><small>(dans main.tsx)</small>"]
+        
+        BR --> APP["📦 App.tsx"]
+        
+        APP --> ROUTES["🗺️ Routes<br/><small>Conteneur</small>"]
+        
+        ROUTES --> R1["📍 Route path='/'<br/>element=LandingPage"]
+        ROUTES --> R2["📍 Route path='/config'<br/>element=ConfigPage"]
+        ROUTES --> R3["📍 Route path='/discovery'<br/>element=DiscoveryPage"]
+        ROUTES --> R4["📍 Route path='/resource/:id'<br/>element=DetailPage"]
+        
+        subgraph components["🔧 Composants de Navigation"]
+            direction LR
+            LINK["🔗 Link<br/><small>Créer liens</small>"]
+            NAV["➡️ useNavigate<br/><small>Navigation code</small>"]
+            PARAMS["🏷️ useParams<br/><small>Extraire :id</small>"]
+            LOC["📍 useLocation<br/><small>URL actuelle</small>"]
+            OUT["🎯 Outlet<br/><small>Zone enfants</small>"]
+        end
+    end
+    
+    URL["🌐 URL: /discovery"] -.->|"détecte"| BR
+    BR -.->|"active routing"| ROUTES
+    ROUTES -.->|"trouve match"| R3
+    R3 -.->|"affiche"| DISCO["🎨 DiscoveryPage"]
+    
+    style BR fill:#e1bee7
+    style ROUTES fill:#fff9c4
+    style components fill:#b2dfdb
+    style DISCO fill:#c5e1a5
+```
+
+**📖 Lecture du schéma** :
+1. **BrowserRouter** (violet) : Active tout le système de routing
+2. **Routes** (jaune) : Conteneur qui analyse l'URL
+3. **Route** entries : Mappings URL → Composant
+4. **Composants de navigation** (turquoise) : Outils à utiliser dans ton code
+5. **Flux pointillé** : Comment une URL devient un composant affiché
+
+##### Installation
+
+```bash
+npm install react-router-dom
+```
+
+**Un seul package** : `react-router-dom` contient tout pour les applications web.
+
+---
+
+##### Les 3 Concepts Fondamentaux
+
+```tsx
+                   🧭 React Router
+                        │
+        ┌───────────────┼───────────────┐
+        │               │               │
+   1️⃣ Router      2️⃣ Routes      3️⃣ Composants
+  (BrowserRouter)  (<Route />)    (Link, Outlet)
+        │               │               │
+   Système de       Définit les     Outils pour
+   navigation      correspondances   naviguer
+   par l'URL          URL → Page      
+```
+
+**1️⃣ Router (BrowserRouter)** : Le conteneur principal qui active le routing
+
+```tsx
+import { BrowserRouter } from 'react-router-dom'
+
+<BrowserRouter>
+  <App />  {/* Toute ton app est à l'intérieur */}
+</BrowserRouter>
+```
+
+**2️⃣ Routes & Route** : Définir les correspondances URL → Composant
+
+```tsx
+import { Routes, Route } from 'react-router-dom'
+
+<Routes>
+  <Route path="/" element={<HomePage />} />
+  <Route path="/discovery" element={<DiscoveryPage />} />
+  <Route path="/validation" element={<ValidationPage />} />
+</Routes>
+```
+
+**3️⃣ Composants de navigation** :
+- `<Link to="/path">` : Créer un lien (remplace `<a href>`)
+- `<Outlet />` : Zone où les routes enfants s'affichent (nested routes)
+- `useNavigate()` : Navigation programmatique (dans le code)
+- `useParams()` : Récupérer les paramètres d'URL (ex: `:id`)
+
+---
+
+#### 3. **Schéma Complet de Navigation**
+
+Voici l'architecture qu'on va construire pour ton application :
+
+##### Schéma : Layout avec Outlet (Nested Routes)
+
+```mermaid
+flowchart TB
+    subgraph browser["🌐 Navigateur - URL: /discovery"]
+        URL["📍 URL affichée : http://localhost:5173/discovery"]
+    end
+    
+    subgraph router["🧭 React Router (BrowserRouter)"]
+        RR["Détecte changement URL"]
+    end
+    
+    subgraph app["📦 App.tsx - Définition Routes"]
+        direction TB
+        ROUTES["📍 Routes"]
+        
+        ROUTES --> LAND["Route path='/'<br/>→ LandingPage<br/><small>(sans layout)</small>"]
+        
+        ROUTES --> LAYOUT["🏗️ Route element=MainLayout<br/><small>(route parent sans path)</small>"]
+        
+        LAYOUT --> R1["Route path='/config'<br/>→ ConfigPage"]
+        LAYOUT --> R2["Route path='/discovery'<br/>→ DiscoveryPage"]
+        LAYOUT --> R3["Route path='/validation'<br/>→ ValidationPage"]
+    end
+    
+    subgraph layout["🏗️ MainLayout.tsx"]
+        direction TB
+        HEADER["📋 Header<br/><small>Logo, User Info</small>"]
+        
+        subgraph flex["↔️ Flex Container"]
+            direction LR
+            SIDE["📂 Sidebar<br/><small>Navigation Links<br/>- Accueil<br/>- Config<br/>- Discovery<br/>- Validation<br/>- RAG</small>"]
+            
+            OUTLET["🎯 Outlet<br/><small>Zone Dynamique</small>"]
+        end
+        
+        HEADER --> flex
+    end
+    
+    subgraph pages["📄 Pages Affichées dans Outlet"]
+        CP["🗺️ ConfigPage"]
+        DP["🔍 DiscoveryPage"]
+        VP["✅ ValidationPage"]
+    end
+    
+    browser --> router
+    router --> app
+    R2 -.->|"URL match /discovery"| layout
+    layout -.->|"affiche dans"| OUTLET
+    OUTLET -.->|"rend"| DP
+    
+    SIDE -.->|"useLocation()<br/>détecte /discovery<br/>→ surbrillance"| SIDE
+    
+    style browser fill:#e3f2fd
+    style router fill:#f3e5f5
+    style app fill:#fff9c4
+    style layout fill:#c8e6c9
+    style OUTLET fill:#ffccbc
+    style DP fill:#ffeb3b
+```
+
+**📖 Lecture du schéma** :
+
+1. **User change l'URL** → `/discovery`
+2. **React Router détecte** le changement
+3. **App.tsx trouve** la route qui match (`/discovery` sous MainLayout)
+4. **MainLayout s'affiche** avec Header + Sidebar + Outlet
+5. **DiscoveryPage est injectée** dans l'Outlet
+6. **Sidebar détecte** l'URL active avec `useLocation()` → surbrillance du lien
+
+**🎯 Résultat** : Header et Sidebar **restent** en place, seul le contenu de l'Outlet change !
+
+```
+┌─────────────────────────────────────────────────────┐
+│  URL: /                                             │
+│  ┌─────────────────────────────────────────────┐   │
+│  │ BrowserRouter                               │   │
+│  │  ┌──────────────────────────────────────┐   │   │
+│  │  │ App.tsx (Layout global)              │   │   │
+│  │  │  ┌─────────────────────────────┐     │   │   │
+│  │  │  │ Header                      │     │   │   │
+│  │  │  │ 🏠 Resource Admin Platform  │     │   │   │
+│  │  │  └─────────────────────────────┘     │   │   │
+│  │  │  ┌─────────┬───────────────────────┐ │   │   │
+│  │  │  │ Sidebar │ <Outlet />            │ │   │   │
+│  │  │  │         │                       │ │   │   │
+│  │  │  │ Links:  │  Routes affichées:   │ │   │   │
+│  │  │  │ - Home  │  / → HomePage        │ │   │   │
+│  │  │  │ - Confi │  /config → Config    │ │   │   │
+│  │  │  │ - Disco │  /discovery → Disco  │ │   │   │
+│  │  │  │ - Valid │  /validation → Valid │ │   │   │
+│  │  │  │ - RAG   │  /rag → RAGPage      │ │   │   │
+│  │  │  └─────────┴───────────────────────┘ │   │   │
+│  │  └──────────────────────────────────────┘   │   │
+│  └─────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────┘
+```
+
+**Flux de navigation** :
+
+```
+User clique "Validation" dans Sidebar
+         ↓
+Link to="/validation" change l'URL
+         ↓
+React Router détecte le changement
+         ↓
+Trouve la Route path="/validation"
+         ↓
+Affiche <ValidationPage /> dans <Outlet />
+         ↓
+Header & Sidebar restent inchangés !
+```
+
+---
+
+### 🛠️ Exercices Progressifs
+
+On va construire la navigation en **5 exercices** :
+
+1. **Installation & Configuration** : Setup de React Router
+2. **Routes Simples** : Transformer App.tsx avec routing basique
+3. **Layout Pattern** : Créer un layout avec Sidebar
+4. **Navigation Links** : Créer des liens de navigation
+5. **Routes Dynamiques** : Pages avec paramètres (`/resource/:id`)
+
+---
+
+#### 📝 Exercice 1 : Installation & Configuration Initiale
+
+**🎯 Objectif** : Installer React Router et configurer le routeur principal
+
+##### Étape 1.1 : Installation
+
+```bash
+npm install react-router-dom
+```
+
+**Vérification** :
+```bash
+# Vérifie que react-router-dom est dans package.json
+cat package.json | grep react-router-dom
+```
+
+Tu devrais voir : `"react-router-dom": "^6.x.x"`
+
+---
+
+##### Étape 1.2 : Wrapping avec BrowserRouter
+
+**Concept** : Le `<BrowserRouter>` doit **envelopper** toute ton application. On le met généralement dans `main.tsx`.
+
+**Fichier** : `src/main.tsx`
+
+```tsx
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+import { BrowserRouter } from 'react-router-dom'  // ← Import
+import App from './App'
+import './index.css'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5,
+      cacheTime: 1000 * 60 * 10,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+})
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <BrowserRouter>  {/* ← Ajout du Router */}
+      <QueryClientProvider client={queryClient}>
+        <App />
+        <ReactQueryDevtools initialIsOpen={false} />
+      </QueryClientProvider>
+    </BrowserRouter>  {/* ← Fermeture */}
+  </React.StrictMode>
+)
+```
+
+**📖 Explications** :
+- `BrowserRouter` : Active le système de routing basé sur l'URL du navigateur
+- **Position** : À l'extérieur de QueryClientProvider (ordre important)
+- **Alternative** : `HashRouter` (utilise `#/path` dans l'URL, utile pour déploiements sans serveur)
+
+**💡 Ordre des Providers** : Pourquoi cet ordre ?
+```tsx
+<BrowserRouter>          {/* 1️⃣ Navigation (plus haut niveau) */}
+  <QueryClientProvider>  {/* 2️⃣ Données (niveau intermédiaire) */}
+    <App />              {/* 3️⃣ Application (utilise 1 et 2) */}
+```
+
+L'App peut utiliser à la fois le routing ET TanStack Query, donc les deux doivent être au-dessus.
+
+---
+
+#### 📝 Exercice 2 : Routes Simples - Première Navigation
+
+**🎯 Objectif** : Créer des routes basiques pour naviguer entre ConfigurationPage et DiscoveryPage
+
+##### Étape 2.1 : Créer LandingPage (Accueil)
+
+Créons d'abord une simple page d'accueil avant de réutiliser nos pages existantes.
+
+**Fichier** : `src/pages/LandingPage.tsx`
+
+```tsx
+export function LandingPage() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 flex items-center justify-center p-6">
+      <div className="max-w-3xl text-center">
+        <h1 className="text-5xl font-bold text-gray-900 mb-4">
+          🌍 Resource Discovery Platform
+        </h1>
+        <p className="text-xl text-gray-600 mb-8">
+          Interface d'administration pour gérer les ressources critiques
+        </p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
+          <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
+            <div className="text-4xl mb-3">🗺️</div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Configuration
+            </h3>
+            <p className="text-sm text-gray-600">
+              Gérer les langues et pays supportés
+            </p>
+          </div>
+          
+          <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
+            <div className="text-4xl mb-3">🔍</div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Découverte
+            </h3>
+            <p className="text-sm text-gray-600">
+              Rechercher de nouvelles ressources
+            </p>
+          </div>
+          
+          <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
+            <div className="text-4xl mb-3">✅</div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Validation
+            </h3>
+            <p className="text-sm text-gray-600">
+              Valider et enrichir les ressources
+            </p>
+          </div>
+          
+          <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow">
+            <div className="text-4xl mb-3">🎯</div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              RAG Format
+            </h3>
+            <p className="text-sm text-gray-600">
+              Préparer pour l'indexation vectorielle
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+```
+
+**📖 Explications** :
+- Page d'accueil simple avec présentation des 4 étapes du workflow
+- Design avec Tailwind : gradient, cards avec hover effects
+- Sera le point d'entrée de l'application (`/`)
+
+---
+
+##### Étape 2.2 : Définir les Routes dans App.tsx
+
+Maintenant, transformons App.tsx pour utiliser le routing au lieu des onglets.
+
+**Fichier** : `src/App.tsx` (version simplifiée avec routing)
+
+```tsx
+import { Routes, Route } from 'react-router-dom'
+import { LandingPage } from './pages/LandingPage'
+import { ConfigurationPage } from './pages/ConfigurationPage'
+import { DiscoveryPage } from './pages/DiscoveryPage'
+
+function App() {
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Routes>
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/configuration" element={<ConfigurationPage />} />
+        <Route path="/discovery" element={<DiscoveryPage />} />
+      </Routes>
+    </div>
+  )
 }
 
-function MainApp({ onDemoClick }: MainAppProps) {
+export default App
+```
 
+**📖 Explications** :
 
+**Routes & Route** :
+- `<Routes>` : Conteneur de toutes les routes (un seul par partie de l'app)
+- `<Route>` : Définit une correspondance URL → Composant
+  - `path="/"` : URL racine (ex: `http://localhost:5173/`)
+  - `path="/discovery"` : URL avec chemin (ex: `http://localhost:5173/discovery`)
+  - `element={<Component />}` : Le composant à afficher (avec syntaxe JSX)
 
-<Button 
-  label={loading ? '⏳ Recherche...' : '🔍 Lancer la découverte'}
-  onClick={handleSubmit}
-  variant="primary"
-  disabled={loading || selectedCategories.length === 0}
+**Ordre des Routes** : Peu importe l'ordre, React Router trouve automatiquement la correspondance exacte.
+
+**🎯 Test manuel** :
+
+1. Lance ton app : `npm run dev`
+2. Ouvre `http://localhost:5173/` → Tu vois LandingPage
+3. Change l'URL manuellement à `http://localhost:5173/configuration` → ConfigurationPage s'affiche
+4. Change à `http://localhost:5173/discovery` → DiscoveryPage s'affiche
+
+**🔍 Observation importante** : Pour l'instant, tu dois changer l'URL **manuellement**. On va ajouter des liens cliquables dans l'exercice suivant !
+
+---
+
+##### Étape 2.3 : Ajouter des Liens Temporaires
+
+Pour naviguer sans modifier l'URL manuellement, ajoutons des liens basiques dans LandingPage.
+
+**Fichier** : `src/pages/LandingPage.tsx` (mise à jour)
+
+```tsx
+import { Link } from 'react-router-dom'  // ← Import
+
+export function LandingPage() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 flex items-center justify-center p-6">
+      <div className="max-w-3xl text-center">
+        <h1 className="text-5xl font-bold text-gray-900 mb-4">
+          🌍 Resource Discovery Platform
+        </h1>
+        <p className="text-xl text-gray-600 mb-8">
+          Interface d'administration pour gérer les ressources critiques
+        </p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
+          {/* Card 1 - Configuration */}
+          <Link to="/configuration" className="block">  {/* ← Link au lieu de div */}
+            <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer">
+              <div className="text-4xl mb-3">🗺️</div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Configuration
+              </h3>
+              <p className="text-sm text-gray-600">
+                Gérer les langues et pays supportés
+              </p>
+            </div>
+          </Link>
+          
+          {/* Card 2 - Discovery */}
+          <Link to="/discovery" className="block">
+            <div className="bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer">
+              <div className="text-4xl mb-3">🔍</div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Découverte
+              </h3>
+              <p className="text-sm text-gray-600">
+                Rechercher de nouvelles ressources
+              </p>
+            </div>
+          </Link>
+          
+          {/* Cards 3 & 4 - Pas encore de pages, juste du texte */}
+          <div className="bg-gray-100 p-6 rounded-lg opacity-50">
+            <div className="text-4xl mb-3">✅</div>
+            <h3 className="text-lg font-semibold text-gray-700 mb-2">
+              Validation
+            </h3>
+            <p className="text-sm text-gray-500">
+              (À venir - Étape 4)
+            </p>
+          </div>
+          
+          <div className="bg-gray-100 p-6 rounded-lg opacity-50">
+            <div className="text-4xl mb-3">🎯</div>
+            <h3 className="text-lg font-semibold text-gray-700 mb-2">
+              RAG Format
+            </h3>
+            <p className="text-sm text-gray-500">
+              (À venir - Étape 4)
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+```
+
+**📖 Explications** :
+
+**Link vs <a>** :
+```tsx
+// ❌ Mauvais - Recharge toute la page
+<a href="/configuration">Config</a>
+
+// ✅ Bon - Navigation SPA (instantanée)
+<Link to="/configuration">Config</Link>
+```
+
+**`<Link>`** :
+- Composant de React Router
+- `to="/path"` : URL de destination
+- Génère un `<a>` en interne, mais intercept le clic pour navigation SPA
+- **Pas de rechargement** de la page !
+
+**🎯 Test** :
+1. Va sur `/` (LandingPage)
+2. Clique sur "Configuration" → Navigation instantanée (pas de flash blanc)
+3. Clique sur le bouton ← du navigateur → Retour sur `/` (ça marche !)
+4. Clique sur "Découverte" → Navigate to `/discovery`
+
+✅ **Tu as maintenant une vraie navigation SPA !**
+
+---
+
+#### 📝 Exercice 3 : Layout Pattern - Structure Commune
+
+**🎯 Objectif** : Créer un layout avec **Header** et **Sidebar** communs à toutes les pages
+
+##### Concept : Le Pattern Layout
+
+**Problème** : Tu ne veux pas répéter Header et Sidebar dans chaque page.
+
+```tsx
+// ❌ Répétitif - Copier Header partout
+function ConfigurationPage() {
+  return (
+    <>
+      <Header />  {/* Répété */}
+      <Sidebar />  {/* Répété */}
+      <div>Contenu Configuration</div>
+    </>
+  )
+}
+
+function DiscoveryPage() {
+  return (
+    <>
+      <Header />  {/* Encore répété ! */}
+      <Sidebar />  {/* Encore répété ! */}
+      <div>Contenu Discovery</div>
+    </>
+  )
+}
+```
+
+**Solution** : Le **Layout Pattern** avec **Nested Routes**.
+
+```
+┌───────────────────────────────────────┐
+│ Layout (Header + Sidebar)             │
+│  ┌─────────────────────────────────┐  │
+│  │ Header (toujours visible)       │  │
+│  └─────────────────────────────────┘  │
+│  ┌────────┬──────────────────────────┐│
+│  │Sidebar │ <Outlet />               ││
+│  │        │                          ││
+│  │ Links  │ ← Zone dynamique         ││
+│  │        │   Affiche les pages      ││
+│  │        │   enfants                ││
+│  └────────┴──────────────────────────┘│
+└───────────────────────────────────────┘
+```
+
+---
+
+##### Étape 3.1 : Créer le Composant Header
+
+**Fichier** : `src/components/layout/Header.tsx`
+
+```tsx
+export function Header() {
+  return (
+    <header className="bg-white shadow-sm border-b border-gray-200">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between items-center h-16">
+          {/* Logo & Title */}
+          <div className="flex items-center gap-3">
+            <div className="text-3xl">🌍</div>
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">
+                Resource Discovery
+              </h1>
+              <p className="text-xs text-gray-500">
+                Admin Platform
+              </p>
+            </div>
+          </div>
+          
+          {/* User Info (placeholder) */}
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <div className="text-sm font-medium text-gray-900">Admin User</div>
+              <div className="text-xs text-gray-500">admin@example.com</div>
+            </div>
+            <div className="w-10 h-10 rounded-full bg-purple-500 flex items-center justify-center text-white font-semibold">
+              A
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+  )
+}
+```
+
+**📖 Explications** :
+- Header fixe avec titre et info utilisateur
+- Design Tailwind professionnelle
+- Sera visible sur toutes les pages
+
+---
+
+##### Étape 3.2 : Créer le Composant Sidebar
+
+**Fichier** : `src/components/layout/Sidebar.tsx`
+
+```tsx
+import { Link, useLocation } from 'react-router-dom'
+
+const navItems = [
+  { path: '/', label: 'Accueil', icon: '🏠' },
+  { path: '/configuration', label: 'Configuration', icon: '🗺️' },
+  { path: '/discovery', label: 'Découverte', icon: '🔍' },
+  { path: '/validation', label: 'Validation', icon: '✅' },
+  { path: '/rag', label: 'RAG Format', icon: '🎯' },
+]
+
+export function Sidebar() {
+  const location = useLocation()  // ← Hook pour savoir quelle page est active
+
+  return (
+    <aside className="w-64 bg-white border-r border-gray-200 min-h-[calc(100vh-4rem)]">
+      <nav className="p-4 space-y-2">
+        {navItems.map((item) => {
+          const isActive = location.pathname === item.path
+          
+          return (
+            <Link
+              key={item.path}
+              to={item.path}
+              className={`
+                flex items-center gap-3 px-4 py-3 rounded-lg transition-colors
+                ${isActive 
+                  ? 'bg-purple-100 text-purple-700 font-semibold' 
+                  : 'text-gray-700 hover:bg-gray-100'
+                }
+              `}
+            >
+              <span className="text-2xl">{item.icon}</span>
+              <span>{item.label}</span>
+            </Link>
+          )
+        })}
+      </nav>
+      
+      {/* Stats ou infos supplémentaires */}
+      <div className="p-4 border-t border-gray-200 mt-4">
+        <div className="text-xs text-gray-500 mb-2">Statistiques</div>
+        <div className="space-y-1 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-600">Ressources</span>
+            <span className="font-semibold text-gray-900">247</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">En attente</span>
+            <span className="font-semibold text-orange-600">12</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">Validées</span>
+            <span className="font-semibold text-green-600">235</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+  )
+}
+```
+
+**📖 Explications** :
+
+**useLocation()** :
+- Hook de React Router qui retourne l'objet `location` actuel
+- `location.pathname` : Chemin actuel (ex: `/discovery`)
+- Permet de savoir quelle page est active pour styliser le lien
+
+**isActive** :
+```tsx
+const isActive = location.pathname === item.path
+// Si on est sur /discovery et item.path = '/discovery' → isActive = true
+```
+
+**Styling conditionnel** :
+```tsx
+className={`
+  ${isActive 
+    ? 'bg-purple-100 text-purple-700 font-semibold'  // ← Lien actif
+    : 'text-gray-700 hover:bg-gray-100'             // ← Liens inactifs
+  }
+`}
+```
+
+**Liste de navigation** :
+- `navItems` : Array d'objets avec `path`, `label`, `icon`
+- `map()` pour générer les liens automatiquement
+- Facilite l'ajout de nouvelles pages (juste ajouter à l'array)
+
+---
+
+##### Étape 3.3 : Créer le Layout Principal
+
+**Fichier** : `src/components/layout/MainLayout.tsx`
+
+```tsx
+import { Outlet } from 'react-router-dom'
+import { Header } from './Header'
+import { Sidebar } from './Sidebar'
+
+export function MainLayout() {
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header toujours visible */}
+      <Header />
+      
+      {/* Container principal */}
+      <div className="flex">
+        {/* Sidebar toujours visible */}
+        <Sidebar />
+        
+        {/* Zone de contenu dynamique */}
+        <main className="flex-1 p-6">
+          <Outlet />  {/* ← Les pages enfants s'affichent ici */}
+        </main>
+      </div>
+    </div>
+  )
+}
+```
+
+**📖 Explications** :
+
+**<Outlet />** :
+- Composant spécial de React Router
+- "Trou" dans le layout où les routes enfants sont affichées
+- Si tu es sur `/discovery`, `<Outlet />` affiche `<DiscoveryPage />`
+- Si tu es sur `/configuration`, `<Outlet />` affiche `<ConfigurationPage />`
+
+**Structure flexbox** :
+```tsx
+<div className="flex">
+  <Sidebar />  {/* width: 256px fixe */}
+  <main className="flex-1">  {/* Prend tout l'espace restant */}
+    <Outlet />
+  </main>
+</div>
+```
+
+---
+
+##### Étape 3.4 : Utiliser le Layout avec Nested Routes
+
+Maintenant on va restructurer `App.tsx` pour utiliser le layout avec des **routes imbriquées**.
+
+**Fichier** : `src/App.tsx` (version avec layout)
+
+```tsx
+import { Routes, Route } from 'react-router-dom'
+import { MainLayout } from './components/layout/MainLayout'
+import { LandingPage } from './pages/LandingPage'
+import { ConfigurationPage } from './pages/ConfigurationPage'
+import { DiscoveryPage } from './pages/DiscoveryPage'
+
+function App() {
+  return (
+    <Routes>
+      {/* Route Landing (sans layout) */}
+      <Route path="/" element={<LandingPage />} />
+      
+      {/* Routes avec layout */}
+      <Route element={<MainLayout />}>
+        <Route path="/configuration" element={<ConfigurationPage />} />
+        <Route path="/discovery" element={<DiscoveryPage />} />
+      </Route>
+    </Routes>
+  )
+}
+
+export default App
+```
+
+**📖 Explications** :
+
+**Nested Routes (Routes Imbriquées)** :
+```tsx
+<Route element={<MainLayout />}>  {/* ← Route parent SANS path */}
+  <Route path="/configuration" element={<ConfigurationPage />} />  {/* ← Route enfant */}
+  <Route path="/discovery" element={<DiscoveryPage />} />
+</Route>
+```
+
+**Fonctionnement** :
+1. User navigate vers `/configuration`
+2. React Router trouve la route enfant `path="/configuration"`
+3. Affiche le parent `<MainLayout />` d'abord
+4. Dans `<Outlet />` du layout, affiche `<ConfigurationPage />`
+5. **Résultat** : Header + Sidebar + ConfigurationPage
+
+**Pourquoi `/` n'a pas le layout ?** :
+- La LandingPage est une page d'accueil spéciale (full screen)
+- Elle a son propre design, pas besoin de Header/Sidebar
+- Les autres pages (config, discovery, etc.) partagent le layout
+
+---
+
+**🎯 Test Complet** :
+
+1. Lance l'app : `npm run dev`
+2. Va sur `/` → LandingPage (sans layout)
+3. Clique sur "Configuration" → Navigate vers `/configuration`
+   - ✅ Header visible
+   - ✅ Sidebar visible avec "Configuration" en surbrillance
+   - ✅ ConfigurationPage dans la zone principale
+4. Clique sur "Découverte" dans Sidebar → Navigate vers `/discovery`
+   - ✅ Header **reste** (pas rechargé)
+   - ✅ Sidebar **reste** (juste  le lien actif change)
+   - ✅ DiscoveryPage remplace ConfigurationPage dans `<Outlet />`
+5. Utilise le bouton ← du navigateur → Retour fonctionne !
+
+**🎉 Résultat** : Navigation fluide avec structure partagée !
+
+---
+
+#### 📝 Exercice 4 : Navigation Programmatique
+
+**🎯 Objectif** : Apprendre à naviguer depuis le code (pas juste avec des liens cliquables)
+
+##### Concept : Quand utiliser useNavigate() ?
+
+**Cas d'usage** :
+- ✅ Après une action (ex: submit formulaire → redirect)
+- ✅ Après une validation réussie (ex: ressource validée → page suivante)
+- ✅ Redirection conditionnelle (ex: si pas authentifié → login)
+- ✅ Navigation dans une fonction (pas directement dans le JSX)
+
+##### Exemple 1 : Redirection après Validation
+
+Ajoutons un bouton "Retour" dans ValidationPage qui redirige vers `/discovery`.
+
+**Fichier** : `src/pages/ValidationPage.tsx` (extrait)
+
+```tsx
+import { useNavigate } from 'react-router-dom'  // ← Import
+import Button from '../components/ui/Button'
+
+export function ValidationPage() {
+  const navigate = useNavigate()  // ← Hook
+
+  const handleBackToDiscovery = () => {
+    navigate('/discovery')  // ← Navigation programmatique
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto p-6">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">
+          🔍 Validation des Ressources
+        </h1>
+        <Button
+          label="← Retour à la Découverte"
+          onClick={handleBackToDiscovery}
+          variant="secondary"
+        />
+      </div>
+      
+      {/* Reste de la page... */}
+    </div>
+  )
+}
+```
+
+**📖 Explications** :
+
+**useNavigate()** :
+- Hook qui retourne une fonction `navigate`
+- `navigate('/path')` : Navigate vers un chemin
+- `navigate(-1)` : Équivalent au bouton ← du navigateur (page précédente)
+- `navigate(-2)` : 2 pages en arrière
+- `navigate('/path', { replace: true })` : Remplace l'historique (pas de retour possible)
+
+---
+
+##### Exemple 2 : Redirection après Mutation Réussie
+
+**Scénario** : Après validation d'une ressource, naviguer automatiquement vers la page RAG.
+
+```tsx
+import { useNavigate } from 'react-router-dom'
+import { useValidateResource } from '../hooks/useValidateResource'
+
+export function ValidationPage() {
+  const navigate = useNavigate()
+  const validate = useValidateResource()
+
+  const handleValidate = (resourceId: string) => {
+    validate.mutate(resourceId, {
+      onSuccess: () => {
+        // Après validation réussie
+        console.log('✅ Ressource validée !')
+        
+        // Option 1 : Rester sur la page (cache se rafraîchit automatiquement)
+        // (Rien à faire, TanStack Query invalide le cache)
+        
+        // Option 2 : Naviguer vers une autre page
+        // navigate('/rag')
+        
+        // Option 3 : Naviguer après un délai (pour montrer un toast)
+        setTimeout(() => {
+          navigate('/rag')
+        }, 1500)
+      }
+    })
+  }
+
+  return (
+    // ... JSX
+  )
+}
+```
+
+**📖 Explications** :
+
+**onSuccess dans mutate()** :
+- Callback exécuté si la mutation réussit
+- Tu peux y mettre toute logique post-mutation :
+  - Navigation
+  - Afficher un toast de succès
+  - Logger un événement
+  - Etc.
+
+**Choix de design** :
+- **Pas de navigation** : User peut valider plusieurs ressources d'affilée
+- **Navigation automatique** : Workflow linéaire (étape par étape)
+- **Navigation avec délai** : Laisser temps pour feedback visuel
+
+---
+
+#### 📝 Exercice 5 : Routes Dynamiques avec Paramètres
+
+**🎯 Objectif** : Créer une page de détails qui affiche une ressource spécifique via son ID dans l'URL
+
+##### Schéma : Routes Dynamiques et useParams
+
+```mermaid
+flowchart TB
+    subgraph user["👤 Actions Utilisateur"]
+        U1["🖱️ User clique sur<br/>nom ressource<br/>'Association XYZ'"]
+    end
+    
+    subgraph card["🎴 ResourceCard Component"]
+        RC["📝 resource.id = 'res_042'"]
+        LINK["🔗 Link to={`/resource/${resource.id}`}<br/>→ génère /resource/res_042"]
+    end
+    
+    subgraph routing["🧭 React Router"]
+        direction TB
+        URL["📍 URL devient:<br/>http://localhost:5173/resource/res_042"]
+        MATCH["🎯 Trouve Route<br/>path='/resource/:id'<br/>→ :id est un placeholder"]
+    end
+    
+    subgraph detail["📄 ResourceDetailPage"]
+        direction TB
+        PARAMS["🏷️ useParams hook<br/>const { id } = useParams()"]
+        EXTRACT["📦 id = 'res_042'<br/><small>(extrait de l'URL)</small>"]
+        HOOK["🎣 useResourceById(id)<br/><small>(TanStack Query)</small>"]
+        API["📡 GET /sources/res_042"]
+        RENDER["🎨 Affiche détails:<br/>- Nom<br/>- Description<br/>- Contact<br/>- Actions"]
+    end
+    
+    U1 --> RC
+    RC --> LINK
+    LINK --> URL
+    URL --> MATCH
+    MATCH --> PARAMS
+    PARAMS --> EXTRACT
+    EXTRACT --> HOOK
+    HOOK --> API
+    API --> RENDER
+    
+    subgraph examples["💡 Exemples d'URLs Dynamiques"]
+        E1["✅ /resource/res_001"]
+        E2["✅ /resource/res_042"]
+        E3["✅ /resource/abc123"]
+        E4["✅ /resource/anything"]
+    end
+    
+    MATCH -.->|"tous matchent<br/>:id"| examples
+    
+    style user fill:#e1f5fe
+    style card fill:#f3e5f5
+    style routing fill:#fff9c4
+    style detail fill:#c8e6c9
+    style examples fill:#ffe0b2
+```
+
+**📖 Lecture du schéma** :
+
+1. **User clique** sur le nom d'une ressource
+2. **Link génère l'URL** dynamiquement avec l'ID de la ressource
+3. **React Router match** la route avec le pattern `:id`
+4. **ResourceDetailPage utilise useParams()** pour extraire l'ID
+5. **TanStack Query fetch** les données de la ressource
+6. **Page affiche** les détails complets
+
+**🎯 Points clés** :
+- `:id` est un **placeholder** qui peut être n'importe quelle valeur
+- `useParams()` **extrait** automatiquement la valeur de l'URL
+- Chaque ressource a **sa propre URL** (shareable, bookmarkable)
+
+##### Concept : Paramètres d'URL
+
+**Exemple** :
+```
+/resource/res_001  ← res_001 est un paramètre
+/resource/res_042  ← res_042 est un paramètre
+/resource/:id      ← :id est un placeholder dynamique
+```
+
+**Utilité** :
+- ✅ URL partageable (tu peux copier/coller l'URL exacte)
+- ✅ Bookmarkable (tu peux sauvegarder en favori)
+- ✅ SEO-friendly (chaque ressource a sa propre URL)
+- ✅ Navigation directe (bouton Actualiser garde la même page)
+
+---
+
+##### Étape 5.1 : Créer ResourceDetailPage
+
+**Fichier** : `src/pages/ResourceDetailPage.tsx`
+
+```tsx
+import { useParams, useNavigate } from 'react-router-dom'
+import { useResourceById } from '../hooks/useResourceById'
+import { LoadingSpinner } from '../components/ui/LoadingSpinner'
+import { ErrorMessage } from '../components/ui/ErrorMessage'
+import Button from '../components/ui/Button'
+
+export function ResourceDetailPage() {
+  const { id } = useParams<{ id: string }>()  // ← Récupère l'ID depuis l'URL
+  const navigate = useNavigate()
+  
+  // Fetch la ressource avec TanStack Query
+  const { data: resource, isLoading, error, refetch } = useResourceById(id!)
+
+  // États de chargement
+  if (isLoading) return <LoadingSpinner />
+  if (error) return <ErrorMessage error={error} onRetry={refetch} />
+  if (!resource) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-xl text-gray-500">❌ Ressource introuvable</p>
+        <Button
+          label="← Retour"
+          onClick={() => navigate(-1)}
+          variant="secondary"
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto">
+      {/* Header avec bouton retour */}
+      <div className="flex items-center gap-4 mb-6">
+        <Button
+          label="←"
+          onClick={() => navigate(-1)}
+          variant="secondary"
+        />
+        <h1 className="text-3xl font-bold text-gray-900">
+          Détails de la Ressource
+        </h1>
+      </div>
+
+      {/* Card principale */}
+      <div className="bg-white rounded-lg shadow-md p-8">
+        {/* Header */}
+        <div className="flex justify-between items-start mb-6">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              {resource.name}
+            </h2>
+            <div className="flex gap-2">
+              <span className="px-3 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+                {resource.workflow_status}
+              </span>
+              <span className="px-3 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
+                {resource.country}
+              </span>
+            </div>
+          </div>
+          <div className="text-sm text-gray-500">
+            ID: {resource.id}
+          </div>
+        </div>
+
+        {/* Description */}
+        {resource.description && (
+          <div className="mb-6">
+            <h3 className="text-sm font-medium text-gray-700 mb-2">Description</h3>
+            <p className="text-gray-600">{resource.description}</p>
+          </div>
+        )}
+
+        {/* Informations de contact */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <div>
+            <h3 className="text-sm font-medium text-gray-700 mb-3">Contact</h3>
+            <div className="space-y-2">
+              {resource.contact_phone && (
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-500">📞</span>
+                  <a href={`tel:${resource.contact_phone}`} className="text-blue-600 hover:underline">
+                    {resource.contact_phone}
+                  </a>
+                </div>
+              )}
+              {resource.contact_email && (
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-500">📧</span>
+                  <a href={`mailto:${resource.contact_email}`} className="text-blue-600 hover:underline">
+                    {resource.contact_email}
+                  </a>
+                </div>
+              )}
+              {resource.contact_url && (
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-500">🌐</span>
+                  <a 
+                    href={resource.contact_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    {resource.contact_url}
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-medium text-gray-700 mb-3">Métadonnées</h3>
+            <div className="space-y-2 text-sm">
+              {resource.organization && (
+                <div>
+                  <span className="text-gray-500">Organisation:</span>
+                  <span className="ml-2 text-gray-900">{resource.organization}</span>
+                </div>
+              )}
+              {resource.region && (
+                <div>
+                  <span className="text-gray-500">Région:</span>
+                  <span className="ml-2 text-gray-900">{resource.region}</span>
+                </div>
+              )}
+              {resource.languages && resource.languages.length > 0 && (
+                <div>
+                  <span className="text-gray-500">Langues:</span>
+                  <span className="ml-2 text-gray-900">{resource.languages.join(', ')}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3 pt-6 border-t border-gray-200">
+          <Button
+            label="✏️ Éditer"
+            onClick={() => navigate(`/resource/${id}/edit`)}
+            variant="primary"
+          />
+          <Button
+            label="✅ Valider"
+            onClick={() => {/* TODO: Ajouter logique validation */}}
+            variant="primary"
+          />
+          <Button
+            label="📋 Dupliquer"
+            onClick={() => {/* TODO: Ajouter logique duplication */}}
+            variant="secondary"
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+```
+
+**📖 Explications** :
+
+**useParams()** :
+- Hook qui extrait les paramètres de l'URL
+- `const { id } = useParams<{ id: string }>()` : TypeScript sait que `id` est une string
+- Si URL = `/resource/res_042`, alors `id = "res_042"`
+
+**useResourceById(id!)** :
+- `id!` : Le `!` dit à TypeScript "je sais que id existe" (non-null assertion)
+- Nécessaire car `id` peut théoriquement être `undefined` (si URL malformée)
+- Alternative plus sûre : `if (!id) return <ErrorPage />`
+
+**Navigation imbriquée** :
+```tsx
+onClick={() => navigate(`/resource/${id}/edit`)}
+```
+- Tu peux naviguer vers des sous-routes
+- Exemple : `/resource/res_001/edit`
+- Permet de créer des workflows complexes (détails → édition → sauvegarde)
+
+---
+
+##### Étape 5.2 : Ajouter la Route Dynamique dans App.tsx
+
+**Fichier** : `src/App.tsx` (mise à jour)
+
+```tsx
+import { Routes, Route } from 'react-router-dom'
+import { MainLayout } from './components/layout/MainLayout'
+import { LandingPage } from './pages/LandingPage'
+import { ConfigurationPage } from './pages/ConfigurationPage'
+import { DiscoveryPage } from './pages/DiscoveryPage'
+import { ResourceDetailPage } from './pages/ResourceDetailPage'  // ← Import
+
+function App() {
+  return (
+    <Routes>
+      {/* Route Landing (sans layout) */}
+      <Route path="/" element={<LandingPage />} />
+      
+      {/* Routes avec layout */}
+      <Route element={<MainLayout />}>
+        <Route path="/configuration" element={<ConfigurationPage />} />
+        <Route path="/discovery" element={<DiscoveryPage />} />
+        <Route path="/resource/:id" element={<ResourceDetailPage />} />  {/* ← Route dynamique */}
+      </Route>
+    </Routes>
+  )
+}
+
+export default App
+```
+
+**📖 Explications** :
+
+**`:id`** :
+- Syntaxe spéciale pour un paramètre dynamique
+- Peut être n'importe quelle string
+- Exemples qui matchent :
+  - `/resource/res_001`
+  - `/resource/abc123`
+  - `/resource/42`
+  - `/resource/anything-here`
+
+**Ordre des routes** :
+```tsx
+// ⚠️ Attention à l'ordre si tu as plusieurs patterns
+<Route path="/resource/new" element={<NewResourcePage />} />
+<Route path="/resource/:id" element={<ResourceDetailPage />} />
+
+// Si on met :id en premier, /resource/new serait capturé par :id !
+// React Router v6 est intelligent et match la route la plus spécifique
+```
+
+---
+
+##### Étape 5.3 : Créer des Liens vers les Détails
+
+Maintenant, ajoutons des liens depuis ResourceCard pour naviguer vers les détails.
+
+**Fichier** : `src/components/features/ResourceCard.tsx` (mise à jour)
+
+```tsx
+import React from 'react'
+import { Link } from 'react-router-dom'  // ← Import
+import type { Resource } from '../../services/api'
+
+interface ResourceCardProps {
+  resource: Resource
+  children?: React.ReactNode
+}
+
+export function ResourceCard({ resource, children }: ResourceCardProps) {
+  return (
+    <div className="bg-white rounded-lg shadow-md p-6 mb-4 hover:shadow-lg transition-shadow">
+      {/* Header avec nom et badge status */}
+      <div className="flex justify-between items-start mb-3">
+        <Link 
+          to={`/resource/${resource.id}`}  {/* ← Lien vers détails */}
+          className="text-lg font-semibold text-gray-900 hover:text-purple-600 transition-colors"
+        >
+          {resource.name}
+        </Link>
+        {resource.workflow_status && (
+          <span className="px-3 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+            {resource.workflow_status}
+          </span>
+        )}
+      </div>
+
+      {/* Reste du composant inchangé... */}
+      {/* ... */}
+      
+      {/* Actions (passées en children) */}
+      {children && (
+        <div className="flex gap-2 pt-4 border-t border-gray-200">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+**📖 Explications** :
+
+**Template String dans to** :
+```tsx
+to={`/resource/${resource.id}`}
+```
+- Utilise les template strings pour construire l'URL dynamiquement
+- Si `resource.id = "res_042"`, l'URL sera `/resource/res_042`
+
+**hover:text-purple-600** :
+- Le nom devient un lien cliquable avec hover effect
+- Indique visuellement que c'est cliquable
+
+---
+
+**🎯 Test Complet des Routes Dynamiques** :
+
+1. Va sur `/discovery`
+2. Lance une découverte
+3. **Clique sur le nom** d'une ressource
+4. → Tu arrives sur `/resource/res_XXXX`
+5. Tu vois tous les détails de la ressource
+6. Clique sur "←" → Retour sur `/discovery`
+7. **Copie l'URL** `/resource/res_XXXX` et colle dans un nouvel onglet
+8. → La page s'affiche directement (URL partageable !)
+
+✅ **Navigation dynamique fonctionnelle !**
+
+---
+
+### 🎨 Bonus : Route 404 - Page Non Trouvée
+
+Ajoute une route de fallback pour les URLs qui n'existent pas.
+
+**Fichier** : `src/pages/NotFoundPage.tsx`
+
+```tsx
+import { Link } from 'react-router-dom'
+import Button from '../components/ui/Button'
+
+export function NotFoundPage() {
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+      <div className="text-center">
+        <div className="text-9xl mb-4">🤷</div>
+        <h1 className="text-4xl font-bold text-gray-900 mb-2">
+          404 - Page Non Trouvée
+        </h1>
+        <p className="text-gray-600 mb-8">
+          La page que vous recherchez n'existe pas
+        </p>
+        <Link to="/">
+          <Button label="← Retour à l'Accueil" variant="primary" />
+        </Link>
+      </div>
+    </div>
+  )
+}
+```
+
+**Fichier** : `src/App.tsx` (ajout route 404)
+
+```tsx
+import { Routes, Route } from 'react-router-dom'
+import { MainLayout } from './components/layout/MainLayout'
+import { LandingPage } from './pages/LandingPage'
+import { ConfigurationPage } from './pages/ConfigurationPage'
+import { DiscoveryPage } from './pages/DiscoveryPage'
+import { ResourceDetailPage } from './pages/ResourceDetailPage'
+import { NotFoundPage } from './pages/NotFoundPage'  // ← Import
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<LandingPage />} />
+      
+      <Route element={<MainLayout />}>
+        <Route path="/configuration" element={<ConfigurationPage />} />
+        <Route path="/discovery" element={<DiscoveryPage />} />
+        <Route path="/resource/:id" element={<ResourceDetailPage />} />
+      </Route>
+      
+      {/* Route 404 - TOUJOURS EN DERNIER */}
+      <Route path="*" element={<NotFoundPage />} />
+    </Routes>
+  )
+}
+
+export default App
+```
+
+**📖 Explications** :
+
+**`path="*"`** :
+- Wildcard qui match **toute** URL non matchée avant
+- **Doit être en dernier** (sinon elle capture tout !)
+- Exemples qui matchent : `/blabla`, `/page-inexistante`, `/resource/abc/xyz/whatever`
+
+---
+
+### 📊 Récapitulatif Architecture Finale
+
+#### Schéma Complet : Flow de Navigation End-to-End
+
+```mermaid
+flowchart TB
+    subgraph init["🚀 Initialisation App"]
+        MAIN["📄 main.tsx<br/>ReactDOM.render()"]
+        BR["🧭 BrowserRouter"]
+        QC["💾 QueryClientProvider"]
+        APP["📦 App.tsx"]
+        
+        MAIN --> BR
+        BR --> QC
+        QC --> APP
+    end
+    
+    subgraph routes["🗺️ App.tsx - Routes"]
+        direction TB
+        ROUTES["Routes Container"]
+        
+        ROUTES --> R0["/ → LandingPage<br/><small>(pas de layout)</small>"]
+        ROUTES --> PARENT["element=MainLayout<br/><small>(parent pour toutes pages)</small>"]
+        
+        PARENT --> R1["/config → ConfigPage"]
+        PARENT --> R2["/discovery → DiscoveryPage"]
+        PARENT --> R3["/validation → ValidationPage"]
+        PARENT --> R4["/resource/:id → DetailPage"]
+        PARENT --> R5["* → NotFound (404)"]
+    end
+    
+    subgraph layout["🏗️ MainLayout"]
+        direction LR
+        H["📋 Header"]
+        S["📂 Sidebar<br/><small>useLocation<br/>pour actif</small>"]
+        O["🎯 Outlet"]
+        
+        H -.->|"au-dessus"| S
+        S -.->|"à côté"| O
+    end
+    
+    subgraph navigation["🔄 Navigation Flow"]
+        direction TB
+        NAV1["User clique Link<br/>dans Sidebar"]
+        NAV2["URL change<br/>/discovery"]
+        NAV3["Router trouve<br/>route match"]
+        NAV4["Layout garde<br/>Header + Sidebar"]
+        NAV5["Outlet affiche<br/>DiscoveryPage"]
+        
+        NAV1 --> NAV2 --> NAV3 --> NAV4 --> NAV5
+    end
+    
+    subgraph hooks["🎣 Hooks Utilisés"]
+        direction LR
+        HL["Link to<br/><small>Créer liens</small>"]
+        HN["useNavigate<br/><small>Code navigation</small>"]
+        HP["useParams<br/><small>Extraire :id</small>"]
+        HLO["useLocation<br/><small>URL actuelle</small>"]
+    end
+    
+    APP --> ROUTES
+    PARENT -.->|"rend"| layout
+    layout -.->|"dans Outlet"| navigation
+    
+    S -.->|"utilise"| HL
+    NAV1 -.->|"peut aussi utiliser"| HN
+    R4 -.->|"utilise"| HP
+    S -.->|"utilise"| HLO
+    
+    style init fill:#e1bee7
+    style routes fill:#fff9c4
+    style layout fill:#b2dfdb
+    style navigation fill:#c5e1a5
+    style hooks fill:#ffccbc
+```
+
+**📖 Lecture du schéma complet** :
+
+**Phase 1 - Initialisation** (Violet) :
+- main.tsx configure les Providers dans le bon ordre
+- BrowserRouter active le routing
+- QueryClientProvider active TanStack Query
+- App.tsx est rendu
+
+**Phase 2 - Routes** (Jaune) :
+- App.tsx définit toutes les routes
+- Route parent (MainLayout) englobe les pages communes
+- Routes enfants s'affichent dans l'Outlet du layout
+
+**Phase 3 - Layout** (Turquoise) :
+- Header fixe en haut
+- Sidebar à gauche avec navigation
+- Outlet à droite (zone dynamique)
+
+**Phase 4 - Navigation** (Vert) :
+- Click → URL change → Route match → Layout reste → Outlet update
+
+**Phase 5 - Hooks** (Orange) :
+- Outils disponibles pour naviguer et détecter l'état
+
+#### Structure des Fichiers
+
+```
+src/
+├── main.tsx                      # BrowserRouter ici
+├── App.tsx                       # Définition Routes
+│
+├── components/
+│   ├── layout/
+│   │   ├── Header.tsx           # Header partagé
+│   │   ├── Sidebar.tsx          # Navigation latérale
+│   │   └── MainLayout.tsx        # Layout avec Outlet
+│   │
+│   ├── ui/
+│   │   ├── Button.tsx
+│   │   ├── LoadingSpinner.tsx
+│   │   └── ErrorMessage.tsx
+│   │
+│   └── features/
+│       ├── ResourceCard.tsx      # Avec Link vers détails
+│       ├── ResourcesList.tsx
+│       └── DiscoveryForm.tsx
+│
+├── pages/
+│   ├── LandingPage.tsx          # / (sans layout)
+│   ├── ConfigurationPage.tsx    # /configuration
+│   ├── DiscoveryPage.tsx        # /discovery
+│   ├── ResourceDetailPage.tsx   # /resource/:id
+│   └── NotFoundPage.tsx         # * (404)
+│
+├── hooks/
+│   ├── useResources.ts
+│   ├── useResourceById.ts       # Utilisé par DetailPage
+│   └── useValidateResource.ts
+│
+└── services/
+    └── api.ts
+```
+
+---
+
+### 🎓 Checklist Étape 4 - Navigation Complète
+
+Avant de passer à l'Étape 5, vérifie que :
+
+**Installation & Configuration** :
+- [ ] Tu as installé `react-router-dom`
+- [ ] Tu as ajouté `<BrowserRouter>` dans `main.tsx`
+- [ ] Tu comprends l'ordre des Providers (Router → QueryClient → App)
+
+**Concepts React Router** :
+- [ ] Tu comprends **SPA vs Multi-Pages** classique
+- [ ] Tu sais utiliser `<Routes>` et `<Route>`
+- [ ] Tu comprends `<Link to="/path">` vs `<a href>`
+- [ ] Tu sais utiliser `useNavigate()` pour navigation programmatique
+- [ ] Tu comprends `useParams()` pour récupérer les paramètres d'URL
+
+**Layout Pattern** :
+- [ ] Tu as créé `Header.tsx` et `Sidebar.tsx`
+- [ ] Tu as créé `MainLayout.tsx` avec `<Outlet />`
+- [ ] Tu comprends les **Nested Routes** (routes imbriquées)
+- [ ] Tu sais utiliser `useLocation()` pour styliser le lien actif
+
+**Routes Dynamiques** :
+- [ ] Tu as créé `ResourceDetailPage.tsx`
+- [ ] Tu sais utiliser `:id` dans le path
+- [ ] Tu as ajouté des liens depuis ResourceCard vers les détails
+- [ ] Tu as créé une route 404 avec `path="*"`
+
+**Tests** :
+- [ ] La navigation fonctionne entre toutes les pages
+- [ ] Le Header/Sidebar restent visibles sur toutes les pages (sauf Landing)
+- [ ] Les boutons ← et → du navigateur fonctionnent
+- [ ] L'URL change quand tu navigues
+- [ ] Tu peux copier/coller une URL et arriver directement sur la page
+- [ ] La route 404 s'affiche pour les URLs inexistantes
+
+---
+
+---
+
+## 🗓️ ÉTAPE 5 - Page Validation & Formulaires Avancés ✅
+
+### 🎯 Objectif de l'étape
+
+Créer la **page de validation** qui permet de **garder ou rejeter** les ressources découvertes à l'étape précédente. C'est l'**étape critique** du workflow :
+
+```
+Discovery → Validation → Extraction → RAG
+           └─ TU ES ICI
+```
+
+**Ce qu'on va construire** :
+- 📋 **ValidationPage** : Liste des ressources découvertes à valider
+- 🎴 **ResourceValidationCard** : Carte ressource avec actions Garder/Rejeter
+- 🎯 **Actions batch** : Valider/Rejeter en masse
+- 🎨 **Toasts** : Feedback visuel des actions
+- 🔄 **Synchronisation auto** : Cache TanStack Query mis à jour
+
+---
+
+### 📚 Concepts clés à comprendre
+
+#### 1. **Le Workflow de Validation**
+
+**Rappel du backend** (déjà implémenté) :
+
+```
+POST /geographic/validate-batch
+Body: {
+  "source_ids": ["res_001", "res_002"],
+  "action": "approve" ou "reject"
+}
+
+Response: {
+  "approved": 2,
+  "rejected": 0,
+  "message": "Validation effectuée"
+}
+```
+
+**Statuts des ressources** :
+```
+discovered      ← Ressources trouvées par Discovery
+    ↓
+geo_validated   ← Ressources approuvées (garde)
+    OU
+deleted         ← Ressources rejetées (suppression)
+```
+
+**Workflow utilisateur** :
+1. User va sur page "Validation"
+2. Backend fetch toutes les ressources `status=discovered`
+3. User voit les cartes avec scores de confiance
+4. User clique "✅ Garder" → `action: "approve"`
+5. User clique "❌ Rejeter" → `action: "reject"`
+6. Backend met à jour les ressources
+7. Cache TanStack Query se rafraîchit automatiquement
+8. Liste se met à jour sans reload
+
+---
+
+#### 2. **TanStack Query - Mutations Complexes**
+
+Tu as déjà vu `useMutation` dans l'Étape 2. Maintenant on va l'utiliser pour des **actions avec feedback** :
+
+```tsx
+const validateBatch = useMutation({
+  mutationFn: (data) => validateBatchAPI(data),
+  onSuccess: (response) => {
+    // ✅ Succès : Invalider le cache
+    queryClient.invalidateQueries({ queryKey: ['resources'] })
+    // ✅ Afficher toast de succès
+    toast.success(`${response.approved} ressources validées !`)
+  },
+  onError: (error) => {
+    // ❌ Erreur : Afficher toast d'erreur
+    toast.error('Erreur lors de la validation')
+  }
+})
+```
+
+**Nouveaux concepts** :
+- `onSuccess` : Callback exécuté si l'API répond avec succès (status 200-299)
+- `onError` : Callback exécuté si l'API échoue (status 400+, timeout, etc.)
+- `invalidateQueries` : Force le refetch du cache (synchronisation auto)
+- Toasts : Notifications visuelles pour feedback utilisateur
+
+---
+
+#### 3. **React Hot Toast - Bibliothèque de Notifications**
+
+**Pourquoi une bibliothèque ?**
+- ❌ Tu *pourrais* coder des toasts toi-même (div + CSS + animations)
+- ✅ Mais `react-hot-toast` fait tout ça en **2 lignes de code**
+
+**Installation** :
+```bash
+npm install react-hot-toast
+```
+
+**Utilisation** :
+```tsx
+import toast, { Toaster } from 'react-hot-toast'
+
+// Dans ton composant racine (App.tsx)
+<Toaster position="top-right" />
+
+// N'importe où dans ton app
+toast.success('✅ Action réussie !')
+toast.error('❌ Une erreur est survenue')
+toast.loading('⏳ Chargement...')
+```
+
+**Types de toasts** :
+- `toast.success()` : ✅ Succès (vert)
+- `toast.error()` : ❌ Erreur (rouge)
+- `toast.loading()` : ⏳ Chargement (bleu)
+- `toast()` : ℹ️ Information (gris)
+- `toast.promise()` : Automatique selon succès/erreur d'une Promise
+
+**Exemple concret** :
+```tsx
+const handleValidate = async () => {
+  // Toast qui suit la Promise automatiquement
+  toast.promise(
+    validateBatch.mutateAsync({
+      source_ids: selectedIds,
+      action: 'approve'
+    }),
+    {
+      loading: '⏳ Validation en cours...',
+      success: <b>✅ Ressources validées !</b>,
+      error: <b>❌ Erreur de validation</b>,
+    }
+  )
+}
+```
+
+---
+
+#### 4. **Optimistic Updates - Technique Avancée**
+
+**Problème** : Les APIs prennent du temps (300-500ms). L'utilisateur attend.
+
+**Solution naïve** :
+```tsx
+// User clique → API call → Attendre réponse → Mettre à jour UI
+onClick={() => mutation.mutate()}
+// User voit un spinner pendant 500ms ⏳
+```
+
+**Solution optimiste** :
+```tsx
+// User clique → Mettre à jour UI immédiatement → API call en arrière-plan
+onClick={() => {
+  setResourceStatus('validated')  // ← Instantané !
+  mutation.mutate()  // ← En arrière-plan
+}}
+// User voit le changement immédiatement ⚡
+```
+
+**Avec TanStack Query** :
+```tsx
+const validateOptimistic = useMutation({
+  mutationFn: validateAPI,
+  
+  onMutate: async (data) => {
+    // 1️⃣ Annuler refetch en cours
+    await queryClient.cancelQueries({ queryKey: ['resources', 'discovered'] })
+    
+    // 2️⃣ Sauvegarder état actuel (rollback si erreur)
+    const previousResources = queryClient.getQueryData(['resources', 'discovered'])
+    
+    // 3️⃣ Mettre à jour le cache immédiatement
+    queryClient.setQueryData(['resources', 'discovered'], (old) =>
+      old.filter(r => !data.source_ids.includes(r.id))
+    )
+    
+    // 4️⃣ Retourner context pour rollback
+    return { previousResources }
+  },
+  
+  onError: (err, data, context) => {
+    // ❌ Si erreur, restaurer état précédent
+    queryClient.setQueryData(['resources', 'discovered'], context.previousResources)
+  },
+  
+  onSettled: () => {
+    // 🔄 Refetch pour être sûr que le cache est à jour
+    queryClient.invalidateQueries({ queryKey: ['resources'] })
+  }
+})
+```
+
+**Flow Optimistic Update** :
+```
+1. User clique "Valider"
+   ↓
+2. onMutate : Cache mis à jour instantanément (carte disparaît)
+   ↓
+3. mutationFn : API call en arrière-plan
+   ↓
+4a. Succès → onSettled : Refetch pour confirmer
+4b. Erreur → onError : Rollback (carte réapparaît + toast erreur)
+```
+
+**Avantage** : UX **ultra-rapide**. User ne voit pas de spinner.
+
+**Note** : Pour cette étape, on va commencer **simple** (sans optimistic) et on ajoutera cette optimisation plus tard si tu veux.
+
+---
+
+### 🧰 Architecture de la Page Validation
+
+#### Structure des Fichiers à Créer
+
+```
+src/
+├── pages/
+│   └── ValidationPage.tsx              # Page principale
+│
+├── components/
+│   ├── features/
+│   │   ├── ResourceValidationCard.tsx  # Carte ressource
+│   │   └── ValidationBatchActions.tsx  # Actions en masse
+│   │
+│   └── ui/
+│       ├── Badge.tsx                   # Badge de score
+│       └── Toast  # (react-hot-toast) # Déjà fourni par la lib
+│
+├── hooks/
+│   ├── useResourcesByStatus.ts         # Fetch ressources par statut
+│   └── useValidateBatch.ts             # Mutation validation
+│
+└── services/
+    └── api.ts                          # Ajouter validateBatch()
+```
+
+---
+
+### 🛠️ Étape 5.1 - Service API : Validation
+
+**Fichier** : `src/services/api.ts`
+
+On ajoute la fonction pour appeler l'API de validation :
+
+```typescript
+// src/services/api.ts
+
+const API_BASE_URL = 'http://localhost:8000'
+
+// === INTERFACES ===
+
+export interface ValidationRequest {
+  source_ids: string[]
+  action: 'approve' | 'reject'
+}
+
+export interface ValidationResponse {
+  approved: number
+  rejected: number
+  message: string
+}
+
+// === FONCTION VALIDATION ===
+
+export async function validateBatch(
+  request: ValidationRequest
+): Promise<ValidationResponse> {
+  const response = await fetch(`${API_BASE_URL}/geographic/validate-batch`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Validation failed: ${response.statusText}`)
+  }
+
+  return response.json()
+}
+```
+
+**📖 Explications** :
+
+1. **ValidationRequest** : Type pour les données envoyées au backend
+   - `source_ids` : Tableau d'IDs de ressources ("res_001", "res_002", ...)
+   - `action` : Union type TypeScript = Soit "approve", soit "reject" (rien d'autre)
+
+2. **ValidationResponse** : Type pour la réponse du backend
+   - `approved` : Nombre de ressources approuvées
+   - `rejected` : Nombre de ressources rejetées
+   - `message` : Message de confirmation
+
+3. **validateBatch()** : Fonction async qui :
+   - Fait un POST vers `/geographic/validate-batch`
+   - Envoie les données en JSON
+   - Throw une erreur si status HTTP ≠ 2xx
+   - Retourne la réponse parsée
+
+---
+
+### 🛠️ Étape 5.2 - Hook : useResourcesByStatus
+
+**Fichier** : `src/hooks/useResourcesByStatus.ts`
+
+Ce hook va récupérer les ressources filtrées par statut (ici : "discovered").
+
+```typescript
+// src/hooks/useResourcesByStatus.ts
+
+import { useQuery } from '@tanstack/react-query'
+import { fetchResources } from '../services/api'
+import type { DiscoveredResource } from '../services/api'
+
+export function useResourcesByStatus(status: string) {
+  return useQuery<DiscoveredResource[]>({
+    queryKey: ['resources', status],
+    queryFn: () => fetchResources(status),
+    staleTime: 1000 * 60 * 2,  // 2 minutes
+  })
+}
+```
+
+**📖 Explications** :
+
+1. **queryKey : ['resources', status]**
+   - Cache séparé par statut : `['resources', 'discovered']` ≠ `['resources', 'validated']`
+   - Permet d'invalider sélectivement : "Invalide seulement les ressources discovered"
+
+2. **queryFn : () => fetchResources(status)**
+   - Appelle la fonction API qu'on a créée à l'Étape 2
+   - Le paramètre `status` est passé à l'API : `GET /sources?status=discovered`
+
+3. **staleTime : 2 minutes**
+   - Données considérées "fraîches" pendant 2 minutes
+   - Pas de refetch automatique avant ce délai
+   - Plus court que le default global (5 min) car les validations changent souvent
+
+**Utilisation dans un composant** :
+```tsx
+const { data: resources, isLoading, error } = useResourcesByStatus('discovered')
+
+// data = tableau de DiscoveredResource
+// isLoading = true pendant le fetch
+// error = Error si échec
+```
+
+---
+
+### 🛠️ Étape 5.3 - Hook : useValidateBatch
+
+**Fichier** : `src/hooks/useValidateBatch.ts`
+
+Ce hook encapsule la mutation de validation avec gestion du cache et toasts.
+
+```typescript
+// src/hooks/useValidateBatch.ts
+
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { validateBatch } from '../services/api'
+import type { ValidationRequest } from '../services/api'
+import toast from 'react-hot-toast'
+
+export function useValidateBatch() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (request: ValidationRequest) => validateBatch(request),
+    
+    onSuccess: (response, variables) => {
+      // ✅ Succès : Invalider le cache pour refetch
+      queryClient.invalidateQueries({ queryKey: ['resources'] })
+      
+      // ✅ Toast de confirmation selon l'action
+      if (variables.action === 'approve') {
+        toast.success(`✅ ${response.approved} ressource(s) validée(s) !`, {
+          duration: 3000,
+          icon: '✅',
+        })
+      } else {
+        toast.success(`❌ ${response.rejected} ressource(s) rejetée(s)`, {
+          duration: 3000,
+          icon: '🗑️',
+        })
+      }
+    },
+    
+    onError: (error) => {
+      // ❌ Erreur : Toast d'erreur
+      toast.error('❌ Erreur lors de la validation', {
+        duration: 4000,
+      })
+      console.error('Validation error:', error)
+    },
+  })
+}
+```
+
+**📖 Explications Détaillées** :
+
+#### **queryClient = useQueryClient()**
+- Hook TanStack Query qui donne accès au cache global
+- Permet d'invalider des queries spécifiques
+- **Important** : Doit être appelé *dans* le composant (c'est un Hook)
+
+#### **useMutation({ ... })**
+- Retourne un objet avec `mutate()`, `isPending`, `data`, `error`
+
+#### **mutationFn**
+- La fonction à exécuter quand on appelle `mutation.mutate()`
+- Prend les paramètres passés à `mutate()` et les donne à `validateBatch()`
+
+#### **onSuccess(response, variables)**
+- Callback exécuté si l'API répond avec status 200-299
+- `response` : Réponse de l'API (ValidationResponse)
+- `variables` : Paramètres qu'on a passés à `mutate()` (ValidationRequest)
+
+**Invalidation du cache** :
+```typescript
+queryClient.invalidateQueries({ queryKey: ['resources'] })
+```
+- Marque toutes les queries commençant par `['resources']` comme "stale"
+- Déclenche un refetch automatique pour toutes ces queries
+- Résultat : Toutes les listes de ressources se mettent à jour automatiquement
+
+**Toast conditionnel** :
+```typescript
+if (variables.action === 'approve') {
+  toast.success(`✅ ${response.approved} ressource(s) validée(s) !`)
+} else {
+  toast.success(`❌ ${response.rejected} ressource(s) rejetée(s)`)
+}
+```
+- `variables.action` : "approve" ou "reject" (ce qu'on a envoyé)
+- `response.approved` : Nombre retourné par le backend
+- Message différent selon l'action
+
+**Options du toast** :
+- `duration: 3000` : Affiché pendant 3 secondes
+- `icon: '✅'` : Icône personnalisée
+
+#### **onError(error)**
+- Callback exécuté si échec (status 400+, timeout, etc.)
+- Affiche un toast d'erreur générique
+- Log l'erreur dans la console pour debug
+
+---
+
+### 🛠️ Étape 5.4 - Composant : ResourceValidationCard
+
+**Fichier** : `src/components/features/ResourceValidationCard.tsx`
+
+Carte qui affiche une ressource découverte avec boutons Garder/Rejeter.
+
+```tsx
+// src/components/features/ResourceValidationCard.tsx
+
+import type { DiscoveredResource } from '../../services/api'
+import { Button } from '../ui/Button'
+
+interface ResourceValidationCardProps {
+  resource: DiscoveredResource
+  onApprove: () => void
+  onReject: () => void
+  isProcessing: boolean
+}
+
+export function ResourceValidationCard({
+  resource,
+  onApprove,
+  onReject,
+  isProcessing
+}: ResourceValidationCardProps) {
+  
+  // 🎨 Couleur du badge selon le score de confiance
+  const confidenceColor = 
+    resource.confidence >= 0.8 ? 'bg-green-100 text-green-800' :
+    resource.confidence >= 0.5 ? 'bg-yellow-100 text-yellow-800' :
+    'bg-red-100 text-red-800'
+  
+  return (
+    <div className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
+      {/* Header avec Score */}
+      <div className="flex justify-between items-start mb-4">
+        <div className="flex-1">
+          <h3 className="text-lg font-semibold text-gray-900 mb-1">
+            {resource.name}
+          </h3>
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <span>🌍 {resource.country}</span>
+            <span>•</span>
+            <span className="px-2 py-0.5 bg-gray-100 rounded text-xs">
+              {resource.category}
+            </span>
+          </div>
+        </div>
+        
+        {/* Badge Score de Confiance */}
+        <div className="flex flex-col items-end gap-2">
+          <span className={`px-3 py-1 text-sm font-medium rounded-full ${confidenceColor}`}>
+            {Math.round(resource.confidence * 100)}%
+          </span>
+          {resource.is_new && (
+            <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
+              🆕 Nouveau
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Description */}
+      {resource.description && (
+        <p className="text-gray-600 text-sm mb-4 line-clamp-3">
+          {resource.description}
+        </p>
+      )}
+
+      {/* Informations Contact */}
+      <div className="flex flex-wrap gap-3 text-sm text-gray-700 mb-4">
+        {resource.phone && (
+          <span className="flex items-center gap-1">
+            📞 {resource.phone}
+          </span>
+        )}
+        {resource.email && (
+          <span className="flex items-center gap-1">
+            📧 {resource.email}
+          </span>
+        )}
+        {resource.website && (
+          <a 
+            href={resource.website} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
+          >
+            🔗 Site web
+          </a>
+        )}
+      </div>
+
+      {/* Alerte Doublon */}
+      {resource.duplicate_reason && (
+        <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+          <div className="flex items-start gap-2">
+            <span className="text-lg">⚠️</span>
+            <div>
+              <p className="text-sm font-medium text-orange-900 mb-1">
+                Doublon potentiel détecté
+              </p>
+              <p className="text-sm text-orange-800">
+                {resource.duplicate_reason}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex gap-3">
+        <Button
+          variant="success"
+          onClick={onApprove}
+          disabled={isProcessing}
+          className="flex-1"
+        >
+          ✅ Garder cette ressource
+        </Button>
+        <Button
+          variant="danger"
+          onClick={onReject}
+          disabled={isProcessing}
+          className="flex-1"
+        >
+          ❌ Rejeter
+        </Button>
+      </div>
+    </div>
+  )
+}
+```
+
+**📖 Explications Détaillées** :
+
+#### **Props du Composant**
+```typescript
+interface ResourceValidationCardProps {
+  resource: DiscoveredResource      // Données de la ressource
+  onApprove: () => void              // Callback quand user clique Garder
+  onReject: () => void               // Callback quand user clique Rejeter
+  isProcessing: boolean              // true si une action est en cours
+}
+```
+
+#### **Score de Confiance - Couleur Dynamique**
+```typescript
+const confidenceColor = 
+  resource.confidence >= 0.8 ? 'bg-green-100 text-green-800' :  // ≥ 80% : Vert
+  resource.confidence >= 0.5 ? 'bg-yellow-100 text-yellow-800' : // 50-80% : Jaune
+  'bg-red-100 text-red-800'  // < 50% : Rouge
+```
+- **Ternaire imbriqué** : Alternative au if/else pour du style conditionnel
+- Tailwind génère les classes CSS correspondantes
+
+#### **Affichage Conditionnel**
+```tsx
+{resource.description && (
+  <p className="...">{resource.description}</p>
+)}
+```
+- Si `resource.description` est `null` ou `""` : ne rend rien
+- Si `resource.description` existe : rend le `<p>`
+
+#### **Liens Externes Sécurisés**
+```tsx
+<a 
+  href={resource.website} 
+  target="_blank"           {/* Ouvre dans nouvel onglet */}
+  rel="noopener noreferrer" {/* Sécurité : évite exploit window.opener */}
+>
+```
+- `target="_blank"` : Nouvel onglet
+- `rel="noopener"` : Empêche la nouvelle page d'accéder à `window.opener`
+- `rel="noreferrer"` : Ne passe pas le referrer dans les headers HTTP
+
+#### **Gestion État Disabled**
+```tsx
+<Button
+  disabled={isProcessing}  {/* Désactive pendant l'action */}
+  onClick={onApprove}
+>
+```
+- Si `isProcessing` = true : Bouton grisé + non cliquable
+- Empêche l'user de cliquer multiple fois pendant l'API call
+
+#### **Classes Tailwind Utiles**
+- `line-clamp-3` : Limite à 3 lignes avec ellipse (...)
+- `flex-1` : Prend tout l'espace disponible (boutons de taille égale)
+- `hover:shadow-lg` : Ombre plus grande au survol
+- `transition-shadow` : Anime le changement d'ombre
+
+---
+
+### 🛠️ Étape 5.5 - Composant : ValidationBatchActions
+
+**Fichier** : `src/components/features/ValidationBatchActions.tsx`
+
+Barre d'actions en haut de la liste pour valider/rejeter en masse.
+
+```tsx
+// src/components/features/ValidationBatchActions.tsx
+
+import { Button } from '../ui/Button'
+
+interface ValidationBatchActionsProps {
+  selectedCount: number
+  totalCount: number
+  onApproveAll: () => void
+  onRejectAll: () => void
+  isProcessing: boolean
+}
+
+export function ValidationBatchActions({
+  selectedCount,
+  totalCount,
+  onApproveAll,
+  onRejectAll,
+  isProcessing
+}: ValidationBatchActionsProps) {
+  
+  const hasSelection = selectedCount > 0
+  
+  return (
+    <div className="bg-white rounded-lg shadow-md p-4 mb-6">
+      <div className="flex items-center justify-between">
+        {/* Info Sélection */}
+        <div className="flex items-center gap-4">
+          <div className="text-sm text-gray-600">
+            <span className="font-semibold text-gray-900">{selectedCount}</span>
+            {' '}ressource(s) sélectionnée(s) sur{' '}
+            <span className="font-semibold text-gray-900">{totalCount}</span>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3">
+          <Button
+            variant="success"
+            onClick={onApproveAll}
+            disabled={!hasSelection || isProcessing}
+            size="sm"
+          >
+            ✅ Tout Valider ({selectedCount})
+          </Button>
+          <Button
+            variant="danger"
+            onClick={onRejectAll}
+            disabled={!hasSelection || isProcessing}
+            size="sm"
+          >
+            ❌ Tout Rejeter ({selectedCount})
+          </Button>
+        </div>
+      </div>
+
+      {/* Message d'aide */}
+      {!hasSelection && (
+        <p className="text-xs text-gray-500 mt-2">
+          💡 Astuce : Cliquez sur les boutons de chaque carte pour valider/rejeter individuellement
+        </p>
+      )}
+    </div>
+  )
+}
+```
+
+**📖 Explications** :
+
+#### **Logique de Sélection**
+```typescript
+const hasSelection = selectedCount > 0
+```
+- Variable dérivée (calculée à partir des props)
+- Évite de répéter la condition partout
+
+#### **Disabled Conditionnel**
+```tsx
+disabled={!hasSelection || isProcessing}
+```
+- Bouton disabled SI :
+  - Aucune ressource sélectionnée (`!hasSelection`)
+  - OU action en cours (`isProcessing`)
+
+#### **Affichage Conditionnel du Message**
+```tsx
+{!hasSelection && (
+  <p>💡 Astuce : ...</p>
+)}
+```
+- Message d'aide affiché seulement si `selectedCount === 0`
+- Guide l'utilisateur
+
+---
+
+### 🛠️ Étape 5.6 - Page : ValidationPage
+
+**Fichier** : `src/pages/ValidationPage.tsx`
+
+Page complète qui orchestre tout.
+
+```tsx
+// src/pages/ValidationPage.tsx
+
+import { useState } from 'react'
+import { useResourcesByStatus } from '../hooks/useResourcesByStatus'
+import { useValidateBatch } from '../hooks/useValidateBatch'
+import { ResourceValidationCard } from '../components/features/ResourceValidationCard'
+import { ValidationBatchActions } from '../components/features/ValidationBatchActions'
+import { LoadingSpinner } from '../components/ui/LoadingSpinner'
+import { ErrorMessage } from '../components/ui/ErrorMessage'
+
+export function ValidationPage() {
+  // 📊 Fetch ressources à valider
+  const { data: resources, isLoading, error, refetch } = useResourcesByStatus('discovered')
+  
+  // 🔄 Hook de validation
+  const validateBatch = useValidateBatch()
+  
+  // 🎯 Sélection (pour actions batch)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+
+  // === HANDLERS ===
+
+  const handleApprove = (sourceId: string) => {
+    validateBatch.mutate({
+      source_ids: [sourceId],
+      action: 'approve'
+    })
+  }
+
+  const handleReject = (sourceId: string) => {
+    validateBatch.mutate({
+      source_ids: [sourceId],
+      action: 'reject'
+    })
+  }
+
+  const handleApproveAll = () => {
+    if (selectedIds.length === 0) return
+    
+    validateBatch.mutate({
+      source_ids: selectedIds,
+      action: 'approve'
+    })
+    
+    // Réinitialiser la sélection après
+    setSelectedIds([])
+  }
+
+  const handleRejectAll = () => {
+    if (selectedIds.length === 0) return
+    
+    validateBatch.mutate({
+      source_ids: selectedIds,
+      action: 'reject'
+    })
+    
+    setSelectedIds([])
+  }
+
+  const toggleSelection = (sourceId: string) => {
+    setSelectedIds(prev =>
+      prev.includes(sourceId)
+        ? prev.filter(id => id !== sourceId)  // Déselectionner
+        : [...prev, sourceId]                 // Sélectionner
+    )
+  }
+
+  // === RENDER ===
+
+  return (
+    <div className="max-w-7xl mx-auto p-6">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          ✅ Validation des Ressources
+        </h1>
+        <p className="text-gray-600">
+          Examinez les ressources découvertes et décidez lesquelles conserver
+        </p>
+      </div>
+
+      {/* États : Loading / Error */}
+      {isLoading && <LoadingSpinner />}
+
+      {error && (
+        <ErrorMessage
+          error={error}
+          onRetry={() => refetch()}
+        />
+      )}
+
+      {/* Contenu Principal */}
+      {resources && resources.length > 0 ? (
+        <>
+          {/* Actions Batch */}
+          <ValidationBatchActions
+            selectedCount={selectedIds.length}
+            totalCount={resources.length}
+            onApproveAll={handleApproveAll}
+            onRejectAll={handleRejectAll}
+            isProcessing={validateBatch.isPending}
+          />
+
+          {/* Statistiques */}
+          <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="bg-white p-4 rounded-lg shadow text-center">
+              <div className="text-2xl font-bold text-gray-900">{resources.length}</div>
+              <div className="text-sm text-gray-600">À valider</div>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow text-center">
+              <div className="text-2xl font-bold text-blue-600">
+                {resources.filter(r => r.is_new).length}
+              </div>
+              <div className="text-sm text-gray-600">Nouvelles</div>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow text-center">
+              <div className="text-2xl font-bold text-orange-600">
+                {resources.filter(r => r.duplicate_reason).length}
+              </div>
+              <div className="text-sm text-gray-600">Doublons</div>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow text-center">
+              <div className="text-2xl font-bold text-green-600">
+                {resources.filter(r => r.confidence >= 0.8).length}
+              </div>
+              <div className="text-sm text-gray-600">Haute Confiance</div>
+            </div>
+          </div>
+
+          {/* Liste des Ressources */}
+          <div className="space-y-4">
+            {resources.map(resource => (
+              <div key={resource.id} className="relative">
+                {/* Checkbox Sélection */}
+                <div className="absolute top-4 left-4 z-10">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(resource.id)}
+                    onChange={() => toggleSelection(resource.id)}
+                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* Carte Ressource */}
+                <div className="pl-12">
+                  <ResourceValidationCard
+                    resource={resource}
+                    onApprove={() => handleApprove(resource.id)}
+                    onReject={() => handleReject(resource.id)}
+                    isProcessing={validateBatch.isPending}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        /* État Vide */
+        <div className="text-center py-16 bg-gray-50 rounded-lg">
+          <span className="text-6xl mb-4 block">✅</span>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">
+            Aucune ressource à valider
+          </h2>
+          <p className="text-gray-600 mb-6">
+            Toutes les ressources découvertes ont été traitées
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+**📖 Explications Approfondies** :
+
+#### **État Local : Sélection Multiple**
+```typescript
+const [selectedIds, setSelectedIds] = useState<string[]>([])
+```
+- Tableau des IDs de ressources sélectionnées
+- Sert pour les actions batch (Tout Valider / Tout Rejeter)
+
+#### **Toggle Pattern pour Checkbox**
+```typescript
+const toggleSelection = (sourceId: string) => {
+  setSelectedIds(prev =>
+    prev.includes(sourceId)           // Si déjà sélectionné
+      ? prev.filter(id => id !== sourceId)  // → Enlever de la liste
+      : [...prev, sourceId]           // Sinon → Ajouter à la liste
+  )
+}
+```
+- **Pattern classique** pour checkbox avec état array
+- `prev.includes()` : Vérifie si déjà dans le tableau
+- `prev.filter()` : Retire l'ID du tableau
+- `[...prev, sourceId]` : Spread operator pour ajouter à la fin
+
+#### **Handlers Individuels**
+```typescript
+const handleApprove = (sourceId: string) => {
+  validateBatch.mutate({
+    source_ids: [sourceId],  // Tableau avec 1 seul ID
+    action: 'approve'
+  })
+}
+```
+- Valide **une seule** ressource
+- `[sourceId]` : Tableau avec 1 élément (l'API attend un array)
+
+#### **Handlers Batch**
+```typescript
+const handleApproveAll = () => {
+  if (selectedIds.length === 0) return  // Guard clause
+  
+  validateBatch.mutate({
+    source_ids: selectedIds,  // Tableau avec N IDs
+    action: 'approve'
+  })
+  
+  setSelectedIds([])  // Réinitialiser la sélection
+}
+```
+- Valide **plusieurs** ressources en un seul appel API
+- `selectedIds` : Peut contenir 1, 2, 10, 100 IDs
+- Après succès, vide la sélection
+
+#### **Statistiques Calculées**
+```typescript
+{resources.filter(r => r.is_new).length}
+```
+- `resources.filter()` : Retourne un nouveau tableau avec seulement `is_new: true`
+- `.length` : Compte les éléments
+- **Calcul côté frontend** (pas besoin d'une route API dédiée)
+
+#### **Render Conditionnel**
+```tsx
+{resources && resources.length > 0 ? (
+  <>...</>  {/* Liste avec ressources */}
+) : (
+  <div>...</div>  {/* Message vide */}
+)}
+```
+- Si `resources` existe ET contient des éléments : Affiche la liste
+- Sinon : Affiche message "Aucune ressource"
+
+#### **Positionnement Checkbox**
+```tsx
+<div className="relative">  {/* Parent relatif */}
+  <div className="absolute top-4 left-4 z-10">  {/* Checkbox absolue */}
+    <input type="checkbox" ... />
+  </div>
+  <div className="pl-12">  {/* Carte avec padding-left */}
+    <ResourceValidationCard ... />
+  </div>
+</div>
+```
+- **Positionnement absolu** : Checkbox au-dessus de la carte
+- `z-10` : Au premier plan (au-dessus du contenu de la carte)
+- `pl-12` : Padding-left pour éviter que la carte chevauche la checkbox
+
+---
+
+### 🛠️ Étape 5.7 - Intégration dans App.tsx
+
+Ajouter la route pour la page Validation.
+
+```tsx
+// src/App.tsx
+
+import { Routes, Route } from 'react-router-dom'
+import { MainLayout } from './components/layout/MainLayout'
+import { ConfigurationPage } from './pages/ConfigurationPage'
+import { DiscoveryPage } from './pages/DiscoveryPage'
+import { ValidationPage } from './pages/ValidationPage'  // ← Nouveau
+import { NotFoundPage } from './pages/NotFoundPage'
+
+function App() {
+  return (
+    <Routes>
+      {/* Routes avec Layout */}
+      <Route element={<MainLayout />}>
+        <Route path="/" element={<DiscoveryPage />} />
+        <Route path="/configuration" element={<ConfigurationPage />} />
+        <Route path="/validation" element={<ValidationPage />} />  {/* ← Nouveau */}
+      </Route>
+
+      {/* Route 404 */}
+      <Route path="*" element={<NotFoundPage />} />
+    </Routes>
+  )
+}
+
+export default App
+```
+
+---
+
+### 🛠️ Étape 5.8 - Ajouter le Toast Provider
+
+**Fichier** : `src/main.tsx`
+
+Ajouter le composant `<Toaster />` pour afficher les toasts.
+
+```tsx
+// src/main.tsx
+
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { BrowserRouter } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+import { Toaster } from 'react-hot-toast'  // ← Nouveau
+import './index.css'
+import App from './App.tsx'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5,
+      gcTime: 1000 * 60 * 10,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+})
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <BrowserRouter>
+      <QueryClientProvider client={queryClient}>
+        <App />
+        <Toaster position="top-right" />  {/* ← Nouveau */}
+        <ReactQueryDevtools initialIsOpen={false} />
+      </QueryClientProvider>
+    </BrowserRouter>
+  </StrictMode>,
+)
+```
+
+**📖 Configuration du Toaster** :
+
+```tsx
+<Toaster 
+  position="top-right"     // Position des toasts
+  reverseOrder={false}     // Ordre d'affichage
+  gutter={8}               // Espacement entre toasts
+  toastOptions={{
+    // Styles par défaut pour tous les toasts
+    duration: 3000,
+    style: {
+      background: '#363636',
+      color: '#fff',
+    },
+    success: {
+      duration: 3000,
+      iconTheme: {
+        primary: '#10b981',
+        secondary: '#fff',
+      },
+    },
+    error: {
+      duration: 4000,
+      iconTheme: {
+        primary: '#ef4444',
+        secondary: '#fff',
+      },
+    },
+  }}
 />
+```
+
+---
+
+### 🛠️ Étape 5.9 - Ajouter le Lien dans Sidebar
+
+**Fichier** : `src/components/layout/Sidebar.tsx`
+
+```tsx
+// src/components/layout/Sidebar.tsx
+
+import { Link, useLocation } from 'react-router-dom'
+
+export function Sidebar() {
+  const location = useLocation()
+
+  const isActive = (path: string) => location.pathname === path
+
+  return (
+    <aside className="w-64 bg-white shadow-lg">
+      <nav className="p-4">
+        <ul className="space-y-2">
+          <li>
+            <Link
+              to="/"
+              className={`block px-4 py-2 rounded-lg ${
+                isActive('/') 
+                  ? 'bg-blue-500 text-white' 
+                  : 'hover:bg-gray-100'
+              }`}
+            >
+              🔍 Découverte
+            </Link>
+          </li>
+          <li>
+            <Link
+              to="/validation"  {/* ← Nouveau */}
+              className={`block px-4 py-2 rounded-lg ${
+                isActive('/validation') 
+                  ? 'bg-blue-500 text-white' 
+                  : 'hover:bg-gray-100'
+              }`}
+            >
+              ✅ Validation
+            </Link>
+          </li>
+          <li>
+            <Link
+              to="/configuration"
+              className={`block px-4 py-2 rounded-lg ${
+                isActive('/configuration') 
+                  ? 'bg-blue-500 text-white' 
+                  : 'hover:bg-gray-100'
+              }`}
+            >
+              ⚙️ Configuration
+            </Link>
+          </li>
+        </ul>
+      </nav>
+    </aside>
+  )
+}
+```
+
+---
+
+### 📊 Workflow Complet : Validation des Ressources
+
+Voici le flow complet de données depuis le click jusqu'à la mise à jour de l'UI :
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1️⃣ PAGE LOAD : ValidationPage montée                       │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 2️⃣ FETCH : useResourcesByStatus('discovered')              │
+│    TanStack Query vérifie le cache                          │
+│    - Cache vide ou stale → Fetch API                        │
+│    - Cache fresh → Données instantanées                     │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 3️⃣ API CALL : GET /sources?status=discovered               │
+│    Backend retourne les ressources au statut 'discovered'   │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 4️⃣ RENDER : Liste de ResourceValidationCard                │
+│    Chaque ressource affichée avec actions Garder/Rejeter    │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 5️⃣ USER ACTION : Click "✅ Garder"                         │
+│    handleApprove(resource.id) appelé                         │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 6️⃣ MUTATION : validateBatch.mutate()                       │
+│    {                                                         │
+│      source_ids: ["res_001"],                               │
+│      action: "approve"                                       │
+│    }                                                         │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 7️⃣ API CALL : POST /geographic/validate-batch              │
+│    Backend :                                                 │
+│    - Change statut : discovered → geo_validated             │
+│    - Retourne : { approved: 1, rejected: 0 }                │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 8️⃣ ON SUCCESS : Callbacks exécutés                         │
+│    - queryClient.invalidateQueries(['resources'])           │
+│      → Toutes les queries 'resources' marquées stale        │
+│    - toast.success('✅ 1 ressource validée !')              │
+│      → Toast vert affiché en haut à droite                  │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 9️⃣ REFETCH : useResourcesByStatus('discovered')            │
+│    TanStack Query détecte invalidation → Refetch auto       │
+│    GET /sources?status=discovered                           │
+│    → Backend retourne liste SANS res_001 (validé)           │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│ 🔟 RE-RENDER : Liste mise à jour                            │
+│    - res_001 disparaît de la liste                          │
+│    - Statistiques mises à jour automatiquement              │
+│    - Pas de reload de page, juste la liste qui se rafraîchit│
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Points Clés du Workflow
+
+#### 🔄 Synchronisation Automatique
+
+**Sans TanStack Query** (approche naïve) :
+```tsx
+// ❌ Approche manuelle (complexe)
+const [resources, setResources] = useState([])
+
+const handleApprove = async (id) => {
+  await validateAPI(id)
+  // Mettre à jour manuellement le state
+  setResources(prev => prev.filter(r => r.id !== id))
+}
+
+// Problème : Pas synchronisé avec les autres composants
+```
+
+**Avec TanStack Query** :
+```tsx
+// ✅ Approche automatique (simple)
+const { data: resources } = useResourcesByStatus('discovered')
+
+const handleApprove = (id) => {
+  validateBatch.mutate({ source_ids: [id], action: 'approve' })
+  // onSuccess → invalidateQueries → Refetch auto
+}
+
+// Avantage : TOUS les composants qui utilisent useResourcesByStatus('discovered')
+// se mettent à jour automatiquement !
+```
+
+#### ⚡ Performance avec Optimistic Updates (Optionnel Avancé)
+
+Si tu veux rendre l'UI **ultra-rapide**, tu peux mettre à jour l'UI avant l'API :
+
+```tsx
+const validateOptimistic = useMutation({
+  mutationFn: validateBatch,
+  
+  onMutate: async (data) => {
+    // 1️⃣ Optimiste : Retirer immédiatement de l'UI
+    queryClient.setQueryData(['resources', 'discovered'], (old) =>
+      old.filter(r => !data.source_ids.includes(r.id))
+    )
+    // Carte disparaît instantanément ⚡
+  },
+  
+  onError: (err, data, context) => {
+    // ❌ Si erreur API : Rollback (remettre la carte)
+    queryClient.setQueryData(['resources', 'discovered'], context.previousData)
+  },
+  
+  onSettled: () => {
+    // 🔄 Refetch pour être sûr
+    queryClient.invalidateQueries(['resources'])
+  }
+})
+```
+
+**Flow Optimistic** :
+```
+User clique → Carte disparaît instantanément → API call en arrière-plan → Confirmation
+```
+
+**Flow Normal** :
+```
+User clique → Spinner pendant 300ms → API call → Carte disparaît
+```
+
+---
+
+### 🎨 Schéma Architecture Complète de l'Étape 5
+
+```mermaid
+graph TB
+    subgraph Pages["📄 Pages"]
+        VP["ValidationPage<br/><small>Orchestration</small>"]
+    end
+    
+    subgraph Hooks["🎣 Hooks"]
+        HRBS["useResourcesByStatus<br/><small>Fetch discovered</small>"]
+        HVB["useValidateBatch<br/><small>Mutation</small>"]
+    end
+    
+    subgraph Components["🧩 Composants"]
+        RVC["ResourceValidationCard<br/><small>Carte ressource</small>"]
+        VBA["ValidationBatchActions<br/><small>Actions masse</small>"]
+    end
+    
+    subgraph Services["⚙️ Services"]
+        API["api.ts<br/><small>validateBatch()</small>"]
+    end
+    
+    subgraph Backend["🔌 Backend API"]
+        ROUTE["/geographic/validate-batch<br/><small>POST</small>"]
+        DB[("🗄️ Database<br/>Supabase")]
+    end
+    
+    subgraph State["💾 State Management"]
+        QC["QueryClient<br/><small>Cache TanStack Query</small>"]
+        LS["useState<br/><small>selectedIds</small>"]
+    end
+    
+    subgraph UI["🎭 UI Feedback"]
+        TOAST["React Hot Toast<br/><small>Notifications</small>"]
+    end
+    
+    VP -->|"utilise"| HRBS
+    VP -->|"utilise"| HVB
+    VP -->|"rend"| RVC
+    VP -->|"rend"| VBA
+    VP -->|"gère"| LS
+    
+    HRBS -->|"lit"| QC
+    HRBS -->|"appelle"| API
+    
+    HVB -->|"écrit"| QC
+    HVB -->|"appelle"| API
+    HVB -->|"affiche"| TOAST
+    
+    RVC -->|"onClick"| VP
+    VBA -->|"onApproveAll/Reject"| VP
+    
+    API -->|"POST"| ROUTE
+    ROUTE -->|"UPDATE"| DB
+    
+    style Pages fill:#e1bee7
+    style Hooks fill:#ffccbc
+    style Components fill:#c5e1a5
+    style Services fill:#fff9c4
+    style Backend fill:#b2dfdb
+    style State fill:#ffeb3b
+    style UI fill:#f8bbd0
+```
+
+---
+
+### 🎓 Checklist Étape 5 - Validation Complète
+
+Avant de considérer cette étape terminée, vérifie que :
+
+**Installation** :
+- [ ] Tu as installé `react-hot-toast` : `npm install react-hot-toast`
+
+**Service API** :
+- [ ] Tu as ajouté `validateBatch()` dans `services/api.ts`
+- [ ] Tu as défini les interfaces `ValidationRequest` et `ValidationResponse`
+
+**Hooks** :
+- [ ] Tu as créé `useResourcesByStatus.ts`
+- [ ] Tu as créé `useValidateBatch.ts` avec callbacks `onSuccess` et `onError`
+- [ ] Tu comprends comment `invalidateQueries()` synchronise le cache
+
+**Composants** :
+- [ ] Tu as créé `ResourceValidationCard.tsx` avec boutons Garder/Rejeter
+- [ ] Tu as créé `ValidationBatchActions.tsx` pour actions en masse
+- [ ] Tu as ajouté `<Toaster />` dans `main.tsx`
+
+**Page** :
+- [ ] Tu as créé `ValidationPage.tsx`
+- [ ] Tu as ajouté la route `/validation` dans `App.tsx`
+- [ ] Tu as ajouté le lien dans `Sidebar.tsx`
+
+**Concepts React Compris** :
+- [ ] Tu comprends `useMutation` avec callbacks
+- [ ] Tu sais utiliser `invalidateQueries()` pour synchroniser le cache
+- [ ] Tu comprends les **toasts** pour feedback utilisateur
+- [ ] Tu sais gérer la **sélection multiple** avec `useState<string[]>`
+- [ ] Tu comprends le **toggle pattern** pour checkbox
+
+**Tests** :
+- [ ] Tu peux voir la liste des ressources `discovered`
+- [ ] Le clic sur "Garder" valide la ressource et la retire de la liste
+- [ ] Le clic sur "Rejeter" supprime la ressource de la liste
+- [ ] Les toasts s'affichent lors des actions
+- [ ] Les statistiques se mettent à jour automatiquement
+- [ ] Les actions batch fonctionnent (Tout Valider / Tout Rejeter)
+- [ ] La sélection multiple fonctionne avec les checkbox
+
+**Optionnel Avancé** :
+- [ ] Tu as implémenté les **optimistic updates** (UI instantanée)
+- [ ] Tu as ajouté un **filtre** (Tous / Nouveaux / Doublons)
+- [ ] Tu as ajouté la **pagination** si beaucoup de ressources
+
+---
+
+### 🔜 Prochaine étape - ÉTAPE 6
+
+On va apprendre :
+- 📝 **Page Extraction** : Éditer les données de contact (phone, email)
+- ✅ **Validation Critères** : Checklist dynamique selon catégorie
+- 🎨 **Formulaires Avancés** : react-hook-form + validation Zod
+- 🔄 **State Machine** : Gérer les états complexes (idle, editing, saving, error)
+
+---
+
+**Dernière mise à jour** : Étape 5 - Page Validation & Toasts  
+**Statut** : 📝 Document prêt pour implémentation  
+**Prochaine session** : Étape 6 - Extraction Données & Formulaires Avancés
+

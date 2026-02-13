@@ -132,51 +132,44 @@ export async function fetchResourceById(id: string): Promise<Resource> {
 // Fonctions API - Validation
 // ============================================
 
-export interface ValidateSourceRequest {
-    source_id: string
-    action: 'validate_critical' | 'reject'
-    modifications?: Partial<Resource>
-    criteria_checks?: Record<string, boolean>
-    auto_transition_rag?: boolean
-}
-
-export async function validateCriticalSource(
-    request: ValidateSourceRequest
-): Promise<{ success: boolean; message: string }> {
-    const response = await fetch(`${API_BASE_URL}/sources/validate`, {
+export async function validateResource(id: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/sources/${id}/validate`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'Authorization': AUTH_TOKEN
-        },
-        body: JSON.stringify(request)
+        }
     })
 
     if (!response.ok) {
         throw new Error(`Erreur validation: ${response.status}`)
     }
-
-    return response.json()
 }
 
-// ============================================
-// Fonctions API - Update & Extracted Data
-// ============================================
-
-export interface ExtractedContactData {
-    phone?: string
-    url?: string
-    email?: string
-    contact_type?: string
-    availability?: string
-}
-
-export async function updateExtractedData(
-    source_id: string,
-    data: ExtractedContactData
-): Promise<{ success: boolean; resource: Resource }> {
-    const response = await fetch(`${API_BASE_URL}/sources/${source_id}/update-extracted-data`, {
+export async function rejectResource(id: string): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/sources/${id}/reject`, {
         method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': AUTH_TOKEN
+        }
+    })
+
+    if (!response.ok) {
+        throw new Error(`Erreur rejet: ${response.status}`)
+    }
+}
+
+// ============================================
+// Fonctions API - Update
+// ============================================
+
+export async function updateResource(
+    id: string,
+    data: Partial<Resource>
+): Promise<Resource> {
+    const response = await fetch(`${API_BASE_URL}/sources/${id}`, {
+        method: 'PATCH',
         headers: {
             'Content-Type': 'application/json',
             'Authorization': AUTH_TOKEN
@@ -189,19 +182,4 @@ export async function updateExtractedData(
     }
 
     return response.json()
-}
-
-export async function getExtractedData(
-    source_id: string
-): Promise<ExtractedContactData> {
-    const response = await fetch(`${API_BASE_URL}/sources/${source_id}/extracted-data`, {
-        headers: { 'Authorization': AUTH_TOKEN }
-    })
-
-    if (!response.ok) {
-        throw new Error(`Erreur récupération: ${response.status}`)
-    }
-
-    const data = await response.json()
-    return data.extracted_data
 }
