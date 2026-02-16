@@ -135,12 +135,17 @@ class GeminiClient(BaseLLMClient):
                 )
             )
             
+            # Récupérer les tokens utilisés de manière sécurisée
+            tokens_used = None
+            if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                tokens_used = getattr(response.usage_metadata, 'total_token_count', None)
+            
             return LLMResponse(
                 success=True,
                 content=response.text,
                 provider=self.config.provider.value,
                 model=self.config.model,
-                tokens_used=getattr(response, 'usage_metadata', {}).get('total_token_count')
+                tokens_used=tokens_used
             )
             
         except Exception as e:
