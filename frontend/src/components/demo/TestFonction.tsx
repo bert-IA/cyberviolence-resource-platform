@@ -1,5 +1,5 @@
 
-function TestFonction() {
+export function TestFonction() {
     return (
         <div className="min-h-screen bg-white p-8">
 
@@ -552,4 +552,3 @@ function TestFonction() {
     )
 }
 
-export default TestFonction

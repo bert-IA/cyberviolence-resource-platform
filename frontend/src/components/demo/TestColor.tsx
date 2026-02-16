@@ -1,6 +1,6 @@
 
 
-function TestColor() {
+export function TestColor() {
     return (
         <div className="min-h-screen bg-white p-8">
 
@@ -71,4 +71,3 @@ function TestColor() {
     )
 }
 
-export default TestColor

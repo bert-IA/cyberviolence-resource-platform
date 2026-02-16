@@ -8482,17 +8482,2859 @@ Avant de considérer cette étape terminée, vérifie que :
 
 ---
 
-### 🔜 Prochaine étape - ÉTAPE 6
+---
 
-On va apprendre :
-- 📝 **Page Extraction** : Éditer les données de contact (phone, email)
-- ✅ **Validation Critères** : Checklist dynamique selon catégorie
-- 🎨 **Formulaires Avancés** : react-hook-form + validation Zod
-- 🔄 **State Machine** : Gérer les états complexes (idle, editing, saving, error)
+## 🗓️ ÉTAPE 6 - CRUD Configuration Pays/Langues ✅
+
+### 🎯 Objectif de l'étape
+
+Créer la **page de configuration** qui permet à l'admin de **gérer dynamiquement les pays et langues** supportés, en implémentant un **CRUD complet** (Create, Read, Update, Delete).
+
+**Problème actuel** : La configuration est hardcodée dans `constants.py` côté backend  
+**Solution** : Interface React avec formulaires pour modifier la config en temps réel
 
 ---
 
-**Dernière mise à jour** : Étape 5 - Page Validation & Toasts  
+### 📚 Les 5 Concepts Clés de Cette Étape
+
+#### 1️⃣ **CRUD Complet** (Create Read Update Delete)
+
+Le **CRUD** est le pattern fondamental de toute application de gestion :
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   CYCLE CRUD                        │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│  📖 READ      →  Afficher la liste existante       │
+│  ✏️ UPDATE    →  Modifier un élément               │
+│  ➕ CREATE    →  Ajouter un nouvel élément          │
+│  🗑️ DELETE     →  Supprimer un élément             │
+│                                                     │
+│  Chaque opération = 1 mutation TanStack Query      │
+└─────────────────────────────────────────────────────┘
+```
+
+**Dans notre cas** :
+- **READ** : `GET /geographic/countries` → Liste pays par langue
+- **CREATE** : `POST /admin/config/countries-languages` → Ajouter un pays
+- **UPDATE** : `PUT /admin/config/countries-languages/{language}` → Modifier config langue
+- **DELETE** : `DELETE /admin/config/countries-languages/{language}/{code}` → Supprimer pays
+
+---
+
+#### 2️⃣ **Modals (Fenêtres Modales)**
+
+Une **modal** est une fenêtre overlay qui apparaît au-dessus du contenu principal :
+
+```
+┌──────────────────────────────────────────────────────┐
+│  🖥️ Page Principale (ConfigurationPage)            │
+│                                                      │
+│   ┌──────────────────────────────────────────┐     │
+│   │  📋 Liste des Pays                       │     │
+│   │  • France 🇫🇷  [Modifier] [Supprimer]    │     │
+│   │  • Belgique 🇧🇪  [Modifier] [Supprimer]   │     │
+│   │                                          │     │
+│   │  [➕ Ajouter un Pays]  ← clic            │     │
+│   └──────────────────────────────────────────┘     │
+│           ↓                                         │
+│   ┌──────────────────────────────────────────┐     │
+│   │  🎭 MODAL (overlay)                      │     │
+│   │  ┌────────────────────────────────────┐  │     │
+│   │  │ ✏️ Ajouter un Pays                 │  │     │
+│   │  │                                    │  │     │
+│   │  │ Code:  [FR___]                     │  │     │
+│   │  │ Nom:   [France__]                  │  │     │
+│   │  │ Emoji: [🇫🇷____]                   │  │     │
+│   │  │                                    │  │     │
+│   │  │ [Annuler]  [Enregistrer]           │  │     │
+│   │  └────────────────────────────────────┘  │     │
+│   └──────────────────────────────────────────┘     │
+│                                                      │
+└──────────────────────────────────────────────────────┘
+```
+
+**Avantages** :
+- Ne change pas la page principale
+- Contexte clair (ajout ou édition)
+- Fermeture facile (ESC ou clic extérieur)
+
+---
+
+#### 3️⃣ **Formulaires Contrôlés (useState)**
+
+Un **formulaire contrôlé** = React contrôle la valeur de chaque champ :
+
+```tsx
+// ❌ Formulaire NON-contrôlé (HTML classique)
+<input type="text" name="country" />  // ← Valeur gérée par le DOM
+
+// ✅ Formulaire CONTRÔLÉ (React)
+const [countryCode, setCountryCode] = useState("");
+<input 
+  type="text" 
+  value={countryCode}  // ← React contrôle la valeur
+  onChange={(e) => setCountryCode(e.target.value)}  // ← Sync avec state
+/>
+```
+
+**Avantages** :
+- React a toujours la valeur actuelle
+- Validation en temps réel possible
+- Synchronisation bidirectionnelle (UI ↔ State)
+
+**Pattern standard** :
+```tsx
+const [formData, setFormData] = useState({
+  code: "",
+  name: "",
+  flag: ""
+});
+
+const handleChange = (field: string, value: string) => {
+  setFormData(prev => ({ ...prev, [field]: value }));
+};
+```
+
+---
+
+#### 4️⃣ **Conditional Rendering (Rendu Conditionnel)**
+
+Afficher ou cacher des éléments selon des conditions :
+
+```tsx
+// Pattern 1 : && (ET logique)
+{isModalOpen && <CountryModal />}  // Affiche seulement si true
+
+// Pattern 2 : Ternaire (condition ? vrai : faux)
+{isEditing ? <EditForm /> : <ReadOnlyView />}
+
+// Pattern 3 : Guard clause (dans composant)
+if (!data) return <div>Loading...</div>;
+return <div>{data.name}</div>;
+```
+
+**Dans notre CRUD** :
+```tsx
+const [modalState, setModalState] = useState<{
+  isOpen: boolean;
+  mode: "create" | "edit";
+  data: Country | null;
+}>({
+  isOpen: false,
+  mode: "create",
+  data: null
+});
+
+// Affichage conditionnel
+{modalState.isOpen && (
+  <CountryModal 
+    mode={modalState.mode}
+    initialData={modalState.data}
+    onClose={() => setModalState({ isOpen: false, mode: "create", data: null })}
+  />
+)}
+```
+
+---
+
+#### 5️⃣ **Optimistic Updates (Mises à Jour Optimistes)**
+
+**Principe** : Mettre à jour l'UI **AVANT** la réponse du serveur pour une UX instantanée
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  SANS Optimistic Update (UX lente)                          │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  1. User clique "Supprimer" →                               │
+│  2. Spinner apparaît (attente serveur)                      │
+│  3. Serveur répond OK                                       │
+│  4. UI se met à jour (item disparaît)                       │
+│                                                              │
+│  ⏱️ Durée perçue : 500ms-2s (frustrant)                     │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│  AVEC Optimistic Update (UX rapide)                         │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  1. User clique "Supprimer" →                               │
+│  2. Item disparaît IMMÉDIATEMENT (optimistic)               │
+│  3. Requête serveur en arrière-plan                         │
+│  4. Si erreur → Rollback (item réapparaît)                  │
+│                                                              │
+│  ⏱️ Durée perçue : Instantané (excellent)                   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Implémentation TanStack Query** :
+```tsx
+const deleteCountry = useMutation({
+  mutationFn: (code: string) => api.deleteCountry(code),
+  
+  // ⚡ AVANT l'appel serveur
+  onMutate: async (code) => {
+    // Annuler requêtes en cours
+    await queryClient.cancelQueries({ queryKey: ["countries"] });
+    
+    // Sauvegarder état actuel (pour rollback)
+    const previousData = queryClient.getQueryData(["countries"]);
+    
+    // Mettre à jour cache IMMÉDIATEMENT
+    queryClient.setQueryData(["countries"], (old: Country[]) => 
+      old.filter(c => c.code !== code)
+    );
+    
+    return { previousData };  // Contexte pour rollback
+  },
+  
+  // ❌ Si erreur serveur
+  onError: (err, variables, context) => {
+    // Restaurer état avant optimistic update
+    queryClient.setQueryData(["countries"], context?.previousData);
+    toast.error("Erreur lors de la suppression");
+  },
+  
+  // ✅ Serveur a confirmé
+  onSuccess: () => {
+    toast.success("Pays supprimé");
+    // Cache déjà à jour (optimistic), pas besoin d'invalidate
+  }
+});
+```
+
+---
+
+### 🏗️ Architecture des Fichiers
+
+```
+src/
+├── services/
+│   └── api.ts
+│       ├── getCountries()
+│       ├── createCountry()
+│       ├── updateCountry()
+│       └── deleteCountry()
+│
+├── hooks/
+│   ├── useCountries.ts          // Query READ
+│   ├── useCreateCountry.ts      // Mutation CREATE
+│   ├── useUpdateCountry.ts      // Mutation UPDATE
+│   └── useDeleteCountry.ts      // Mutation DELETE
+│
+├── components/
+│   ├── CountryCard.tsx          // Affichage 1 pays avec actions
+│   ├── CountryModal.tsx         // Modal Create/Edit
+│   └── LanguageSelector.tsx     // Sélecteur langue (FR/EN/ES...)
+│
+└── pages/
+    └── ConfigurationPage.tsx    // Orchestration complète
+```
+
+---
+
+### 📝 Implémentation Étape par Étape
+
+---
+
+#### 6.1 - Service API : CRUD Countries
+
+**Fichier** : `src/services/api.ts`
+
+```typescript
+// Types
+export interface Country {
+  code: string;        // "FR", "BE"
+  name: string;        // "France", "Belgique"
+  flag: string;        // "🇫🇷", "🇧🇪"
+  language: string;    // "FR", "EN"
+}
+
+export interface CountriesConfig {
+  [language: string]: Country[];
+  // {
+  //   "FR": [{ code: "FR", name: "France", flag: "🇫🇷" }],
+  //   "EN": [{ code: "GB", name: "United Kingdom", flag: "🇬🇧" }]
+  // }
+}
+
+export interface CountryInput {
+  code: string;
+  name: string;
+  flag: string;
+  language: string;
+}
+
+// READ - Récupérer toutes les configurations
+export const getCountries = async (): Promise<CountriesConfig> => {
+  const response = await fetch(`${API_BASE_URL}/geographic/countries`, {
+    headers: { 'Authorization': `Bearer ${API_TOKEN}` }
+  });
+  
+  if (!response.ok) {
+    throw new Error('Erreur récupération configuration pays');
+  }
+  
+  return response.json();
+};
+
+// CREATE - Ajouter un pays
+export const createCountry = async (country: CountryInput): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/admin/config/countries-languages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${API_TOKEN}`
+    },
+    body: JSON.stringify(country)
+  });
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Erreur ajout pays');
+  }
+};
+
+// UPDATE - Modifier un pays
+export const updateCountry = async (country: CountryInput): Promise<void> => {
+  const response = await fetch(
+    `${API_BASE_URL}/admin/config/countries-languages/${country.language}`,
+    {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${API_TOKEN}`
+      },
+      body: JSON.stringify(country)
+    }
+  );
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Erreur modification pays');
+  }
+};
+
+// DELETE - Supprimer un pays
+export const deleteCountry = async (params: { 
+  language: string; 
+  code: string 
+}): Promise<void> => {
+  const response = await fetch(
+    `${API_BASE_URL}/admin/config/countries-languages/${params.language}/${params.code}`,
+    {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${API_TOKEN}` }
+    }
+  );
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Erreur suppression pays');
+  }
+};
+```
+
+**🎓 Explications** :
+- **CountriesConfig** : Structure imbriquée `{ "FR": [...countries], "EN": [...countries] }`
+- **Tous les appels** : Utilisent token admin et gèrent les erreurs
+- **REST conventions** : GET (read), POST (create), PUT (update), DELETE (delete)
+
+---
+
+#### 6.2 - Hook useCountries : Lecture Configuration
+
+**Fichier** : `src/hooks/useCountries.ts`
+
+```typescript
+import { useQuery } from '@tanstack/react-query';
+import { getCountries, CountriesConfig } from '../services/api';
+
+export const useCountries = () => {
+  return useQuery<CountriesConfig>({
+    queryKey: ['countries-config'],
+    queryFn: getCountries,
+    staleTime: 5 * 60 * 1000,  // 5 minutes (config change rarement)
+  });
+};
+```
+
+**🎓 Explications** :
+- **queryKey** : `['countries-config']` pour différencier de `['countries']` (autre query)
+- **staleTime** : 5 minutes car la config change rarement
+- **Retour** : `{ data, isLoading, isError, error }` comme toujours
+
+---
+
+#### 6.3 - Hook useCreateCountry : Ajout Pays
+
+**Fichier** : `src/hooks/useCreateCountry.ts`
+
+```typescript
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
+import { createCountry, CountryInput, CountriesConfig } from '../services/api';
+
+export const useCreateCountry = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: createCountry,
+    
+    onSuccess: () => {
+      // Invalider cache pour recharger config
+      queryClient.invalidateQueries({ queryKey: ['countries-config'] });
+      toast.success('✅ Pays ajouté avec succès');
+    },
+    
+    onError: (error: Error) => {
+      toast.error(`❌ ${error.message}`);
+    }
+  });
+};
+```
+
+**🎓 Explications** :
+- **onSuccess** : Invalide `countries-config` pour forcer rechargement
+- **Pas d'optimistic update ici** : L'ajout nécessite validation serveur (code unique)
+- **Toast feedback** : Confirmation visuelle à l'utilisateur
+
+---
+
+#### 6.4 - Hook useUpdateCountry : Modification Pays
+
+**Fichier** : `src/hooks/useUpdateCountry.ts`
+
+```typescript
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
+import { updateCountry, CountryInput } from '../services/api';
+
+export const useUpdateCountry = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: updateCountry,
+    
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['countries-config'] });
+      toast.success('✅ Pays modifié avec succès');
+    },
+    
+    onError: (error: Error) => {
+      toast.error(`❌ ${error.message}`);
+    }
+  });
+};
+```
+
+**🎓 Explications** :
+- Même logique que CREATE
+- Invalidation cache pour synchroniser UI
+
+---
+
+#### 6.5 - Hook useDeleteCountry : Suppression avec Optimistic Update
+
+**Fichier** : `src/hooks/useDeleteCountry.ts`
+
+```typescript
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
+import { deleteCountry, CountriesConfig } from '../services/api';
+
+export const useDeleteCountry = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: deleteCountry,
+    
+    // ⚡ Optimistic Update
+    onMutate: async (params) => {
+      // 1. Annuler requêtes en cours
+      await queryClient.cancelQueries({ queryKey: ['countries-config'] });
+      
+      // 2. Sauvegarder état actuel
+      const previousConfig = queryClient.getQueryData<CountriesConfig>(['countries-config']);
+      
+      // 3. Mettre à jour cache IMMÉDIATEMENT
+      queryClient.setQueryData<CountriesConfig>(['countries-config'], (old) => {
+        if (!old) return old;
+        
+        return {
+          ...old,
+          [params.language]: old[params.language].filter(
+            country => country.code !== params.code
+          )
+        };
+      });
+      
+      // 4. Retourner contexte pour rollback
+      return { previousConfig };
+    },
+    
+    // ❌ Rollback si erreur
+    onError: (error: Error, variables, context) => {
+      if (context?.previousConfig) {
+        queryClient.setQueryData(['countries-config'], context.previousConfig);
+      }
+      toast.error(`❌ ${error.message}`);
+    },
+    
+    // ✅ Confirmation
+    onSuccess: () => {
+      toast.success('🗑️ Pays supprimé');
+    }
+  });
+};
+```
+
+**🎓 Explications** :
+- **onMutate** : S'exécute AVANT l'appel serveur
+  1. Annule requêtes en cours (évite race conditions)
+  2. Sauvegarde état actuel (backup pour rollback)
+  3. Met à jour cache immédiatement (UI réactive)
+  4. Retourne contexte (utilisé dans onError)
+  
+- **onError** : Restaure état sauvegardé si serveur échoue
+- **onSuccess** : Pas d'invalidate (cache déjà à jour)
+
+**Résultat UX** : Le pays disparaît instantanément, réapparaît si erreur serveur
+
+---
+
+#### 6.6 - Composant CountryCard : Affichage avec Actions
+
+**Fichier** : `src/components/CountryCard.tsx`
+
+```tsx
+import React from 'react';
+import { Country } from '../services/api';
+
+interface CountryCardProps {
+  country: Country;
+  onEdit: (country: Country) => void;
+  onDelete: (country: Country) => void;
+}
+
+export const CountryCard: React.FC<CountryCardProps> = ({ 
+  country, 
+  onEdit, 
+  onDelete 
+}) => {
+  return (
+    <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
+      {/* Informations pays */}
+      <div className="flex items-center gap-3">
+        <span className="text-3xl">{country.flag}</span>
+        <div>
+          <h3 className="font-medium text-gray-900">{country.name}</h3>
+          <p className="text-sm text-gray-500">Code: {country.code}</p>
+        </div>
+      </div>
+      
+      {/* Actions */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => onEdit(country)}
+          className="px-3 py-1.5 text-sm font-medium text-blue-700 bg-blue-50 rounded hover:bg-blue-100 transition-colors"
+        >
+          ✏️ Modifier
+        </button>
+        <button
+          onClick={() => {
+            if (window.confirm(`Supprimer ${country.name} ?`)) {
+              onDelete(country);
+            }
+          }}
+          className="px-3 py-1.5 text-sm font-medium text-red-700 bg-red-50 rounded hover:bg-red-100 transition-colors"
+        >
+          🗑️ Supprimer
+        </button>
+      </div>
+    </div>
+  );
+};
+```
+
+**🎓 Explications** :
+- **Props callbacks** : `onEdit` et `onDelete` remontent l'action au parent
+- **Confirmation suppression** : `window.confirm()` pour éviter erreurs
+- **Tailwind styling** : Card avec hover effect et boutons colorés
+
+---
+
+#### 6.7 - Composant CountryModal : Formulaire Create/Edit
+
+**Fichier** : `src/components/CountryModal.tsx`
+
+```tsx
+import React, { useState, useEffect } from 'react';
+import { Country, CountryInput } from '../services/api';
+
+interface CountryModalProps {
+  mode: 'create' | 'edit';
+  language: string;
+  initialData?: Country | null;
+  onClose: () => void;
+  onSubmit: (data: CountryInput) => void;
+  isLoading: boolean;
+}
+
+export const CountryModal: React.FC<CountryModalProps> = ({
+  mode,
+  language,
+  initialData,
+  onClose,
+  onSubmit,
+  isLoading
+}) => {
+  // État formulaire
+  const [formData, setFormData] = useState<CountryInput>({
+    code: initialData?.code || '',
+    name: initialData?.name || '',
+    flag: initialData?.flag || '',
+    language: language
+  });
+  
+  // Réinitialiser données si initialData change
+  useEffect(() => {
+    if (initialData) {
+      setFormData({
+        code: initialData.code,
+        name: initialData.name,
+        flag: initialData.flag,
+        language: language
+      });
+    }
+  }, [initialData, language]);
+  
+  // Handler changement champ
+  const handleChange = (field: keyof CountryInput, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+  
+  // Handler soumission
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validation basique
+    if (!formData.code || !formData.name || !formData.flag) {
+      alert('Tous les champs sont requis');
+      return;
+    }
+    
+    onSubmit(formData);
+  };
+  
+  // Fermer modal si clic extérieur
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+  
+  return (
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      onClick={handleBackdropClick}
+    >
+      {/* Modal Container */}
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-gray-900">
+            {mode === 'create' ? '➕ Ajouter un Pays' : '✏️ Modifier le Pays'}
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-2xl"
+          >
+            ×
+          </button>
+        </div>
+        
+        {/* Formulaire */}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Code Pays */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Code Pays (ISO 3166-1)
+            </label>
+            <input
+              type="text"
+              value={formData.code}
+              onChange={(e) => handleChange('code', e.target.value.toUpperCase())}
+              placeholder="FR"
+              maxLength={2}
+              disabled={mode === 'edit'}  // Empêcher modification code en édition
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">2 lettres majuscules (ex: FR, BE, CA)</p>
+          </div>
+          
+          {/* Nom Pays */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Nom du Pays
+            </label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => handleChange('name', e.target.value)}
+              placeholder="France"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              required
+            />
+          </div>
+          
+          {/* Emoji Drapeau */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Emoji Drapeau
+            </label>
+            <input
+              type="text"
+              value={formData.flag}
+              onChange={(e) => handleChange('flag', e.target.value)}
+              placeholder="🇫🇷"
+              maxLength={4}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Emoji unicode (ex: 🇫🇷 🇧🇪 🇨🇦)
+            </p>
+          </div>
+          
+          {/* Actions */}
+          <div className="flex gap-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isLoading}
+              className="flex-1 px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="flex-1 px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+            >
+              {isLoading ? 'Enregistrement...' : 'Enregistrer'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+```
+
+**🎓 Explications** :
+- **Mode dual** : Même composant pour CREATE et EDIT
+- **Formulaire contrôlé** : `formData` state + `handleChange()`
+- **Validation** : Champs requis + format code (2 lettres majuscules)
+- **Disabled code en édition** : Code pays = clé primaire, ne doit pas changer
+- **Backdrop close** : Ferme modal si clic extérieur
+- **ESC key** : Ajouter `useEffect` avec `keydown` listener si nécessaire
+
+---
+
+#### 6.8 - Composant LanguageSelector : Sélecteur Langue
+
+**Fichier** : `src/components/LanguageSelector.tsx`
+
+```tsx
+import React from 'react';
+
+const LANGUAGES = [
+  { code: 'FR', name: 'Français', flag: '🇫🇷' },
+  { code: 'EN', name: 'English', flag: '🇬🇧' },
+  { code: 'ES', name: 'Español', flag: '🇪🇸' },
+  { code: 'IT', name: 'Italiano', flag: '🇮🇹' },
+  { code: 'DE', name: 'Deutsch', flag: '🇩🇪' },
+  { code: 'PT', name: 'Português', flag: '🇵🇹' }
+];
+
+interface LanguageSelectorProps {
+  value: string;
+  onChange: (language: string) => void;
+}
+
+export const LanguageSelector: React.FC<LanguageSelectorProps> = ({ 
+  value, 
+  onChange 
+}) => {
+  return (
+    <div className="flex gap-2">
+      {LANGUAGES.map(lang => (
+        <button
+          key={lang.code}
+          onClick={() => onChange(lang.code)}
+          className={`
+            px-4 py-2 rounded-lg font-medium transition-all
+            ${value === lang.code 
+              ? 'bg-blue-600 text-white shadow-lg' 
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }
+          `}
+        >
+          <span className="mr-2">{lang.flag}</span>
+          {lang.code}
+        </button>
+      ))}
+    </div>
+  );
+};
+```
+
+**🎓 Explications** :
+- **Tabs-like UI** : Boutons avec état actif (bleu) / inactif (gris)
+- **Controlled component** : Reçoit `value` et `onChange` du parent
+- **Tailwind dynamic classes** : Template literal avec condition
+
+---
+
+#### 6.9 - Page ConfigurationPage : Orchestration Complète
+
+**Fichier** : `src/pages/ConfigurationPage.tsx`
+
+```tsx
+import React, { useState } from 'react';
+import { LanguageSelector } from '../components/LanguageSelector';
+import { CountryCard } from '../components/CountryCard';
+import { CountryModal } from '../components/CountryModal';
+import { useCountries } from '../hooks/useCountries';
+import { useCreateCountry } from '../hooks/useCreateCountry';
+import { useUpdateCountry } from '../hooks/useUpdateCountry';
+import { useDeleteCountry } from '../hooks/useDeleteCountry';
+import { Country, CountryInput } from '../services/api';
+
+export const ConfigurationPage: React.FC = () => {
+  // État langue sélectionnée
+  const [selectedLanguage, setSelectedLanguage] = useState('FR');
+  
+  // État modal
+  const [modalState, setModalState] = useState<{
+    isOpen: boolean;
+    mode: 'create' | 'edit';
+    data: Country | null;
+  }>({
+    isOpen: false,
+    mode: 'create',
+    data: null
+  });
+  
+  // Queries & Mutations
+  const { data: countriesConfig, isLoading, isError } = useCountries();
+  const createMutation = useCreateCountry();
+  const updateMutation = useUpdateCountry();
+  const deleteMutation = useDeleteCountry();
+  
+  // Données pays pour la langue sélectionnée
+  const countries = countriesConfig?.[selectedLanguage] || [];
+  
+  // Handlers Modal
+  const openCreateModal = () => {
+    setModalState({ isOpen: true, mode: 'create', data: null });
+  };
+  
+  const openEditModal = (country: Country) => {
+    setModalState({ isOpen: true, mode: 'edit', data: country });
+  };
+  
+  const closeModal = () => {
+    setModalState({ isOpen: false, mode: 'create', data: null });
+  };
+  
+  // Handler Soumission Modal
+  const handleModalSubmit = (data: CountryInput) => {
+    if (modalState.mode === 'create') {
+      createMutation.mutate(data, {
+        onSuccess: closeModal
+      });
+    } else {
+      updateMutation.mutate(data, {
+        onSuccess: closeModal
+      });
+    }
+  };
+  
+  // Handler Suppression
+  const handleDelete = (country: Country) => {
+    deleteMutation.mutate({ 
+      language: selectedLanguage, 
+      code: country.code 
+    });
+  };
+  
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="animate-spin text-4xl mb-4">⏳</div>
+          <p className="text-gray-600">Chargement configuration...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Error state
+  if (isError) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+        <p className="text-red-800">❌ Erreur chargement configuration</p>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">⚙️ Configuration Pays/Langues</h1>
+        <p className="text-gray-600 mt-2">
+          Gérez les pays supportés pour chaque langue
+        </p>
+      </div>
+      
+      {/* Sélecteur Langue */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <label className="block text-sm font-medium text-gray-700 mb-3">
+          Langue
+        </label>
+        <LanguageSelector 
+          value={selectedLanguage} 
+          onChange={setSelectedLanguage} 
+        />
+      </div>
+      
+      {/* Actions */}
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-gray-600">
+          {countries.length} pays configuré{countries.length > 1 ? 's' : ''} pour <strong>{selectedLanguage}</strong>
+        </div>
+        <button
+          onClick={openCreateModal}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+        >
+          ➕ Ajouter un Pays
+        </button>
+      </div>
+      
+      {/* Liste Pays */}
+      <div className="space-y-3">
+        {countries.length === 0 ? (
+          <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+            <p className="text-gray-500">Aucun pays configuré pour cette langue</p>
+            <button
+              onClick={openCreateModal}
+              className="mt-4 text-blue-600 hover:underline"
+            >
+              Ajouter le premier pays
+            </button>
+          </div>
+        ) : (
+          countries.map(country => (
+            <CountryCard
+              key={country.code}
+              country={country}
+              onEdit={openEditModal}
+              onDelete={handleDelete}
+            />
+          ))
+        )}
+      </div>
+      
+      {/* Modal Create/Edit */}
+      {modalState.isOpen && (
+        <CountryModal
+          mode={modalState.mode}
+          language={selectedLanguage}
+          initialData={modalState.data}
+          onClose={closeModal}
+          onSubmit={handleModalSubmit}
+          isLoading={createMutation.isPending || updateMutation.isPending}
+        />
+      )}
+    </div>
+  );
+};
+```
+
+**🎓 Explications** :
+- **État centralisé** : `selectedLanguage` + `modalState` dans la page
+- **Dérivation données** : `countries = countriesConfig?.[selectedLanguage]`
+- **Callbacks** : Toutes les actions remontent à la page (single source of truth)
+- **Loading/Error states** : Guards clauses en début de composant
+- **Empty state** : Message chaleureux si aucun pays configuré
+- **Modal conditionnelle** : Affichage via `{modalState.isOpen && <CountryModal />}`
+
+---
+
+#### 6.10 - Intégration dans App
+
+**Fichier** : `src/App.tsx`
+
+```tsx
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { ConfigurationPage } from './pages/ConfigurationPage';
+import { DiscoveryPage } from './pages/DiscoveryPage';
+import { ValidationPage } from './pages/ValidationPage';
+import { Sidebar } from './components/Sidebar';
+
+function App() {
+  return (
+    <BrowserRouter>
+      <div className="flex h-screen bg-gray-50">
+        <Sidebar />
+        <main className="flex-1 overflow-auto p-8">
+          <Routes>
+            <Route path="/" element={<ConfigurationPage />} />  {/* Nouvelle route */}
+            <Route path="/config" element={<ConfigurationPage />} />  {/* Alias */}
+            <Route path="/discovery" element={<DiscoveryPage />} />
+            <Route path="/validation" element={<ValidationPage />} />
+          </Routes>
+        </main>
+      </div>
+    </BrowserRouter>
+  );
+}
+
+export default App;
+```
+
+**Fichier** : `src/components/Sidebar.tsx` (ajouter lien)
+
+```tsx
+<NavLink 
+  to="/config" 
+  className={({ isActive }) => `
+    flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors
+    ${isActive ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'}
+  `}
+>
+  ⚙️ Configuration
+</NavLink>
+```
+
+---
+
+### 📊 Workflow Complet - CRUD Configuration
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                   WORKFLOW CRUD CONFIGURATION                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  1. 📖 CHARGEMENT PAGE (READ)                                          │
+│     - useCountries() récupère GET /geographic/countries                │
+│     - Cache TanStack Query stocke { FR: [...], EN: [...] }            │
+│     - UI affiche liste pays pour langue sélectionnée                  │
+│                                                                         │
+│  2. ➕ CRÉATION PAYS (CREATE)                                          │
+│     User: Clic "Ajouter un Pays"                                       │
+│      ↓                                                                  │
+│     Modal s'ouvre (mode: 'create', data: null)                         │
+│      ↓                                                                  │
+│     User remplit formulaire (code: "FR", name: "France", flag: "🇫🇷")  │
+│      ↓                                                                  │
+│     User clique "Enregistrer"                                          │
+│      ↓                                                                  │
+│     createMutation.mutate() → POST /admin/config/countries-languages   │
+│      ↓                                                                  │
+│     onSuccess:                                                          │
+│       - invalidateQueries(['countries-config'])                        │
+│       - Toast "✅ Pays ajouté"                                          │
+│       - Modal se ferme                                                 │
+│       - Liste se met à jour (nouveau pays visible)                     │
+│                                                                         │
+│  3. ✏️ MODIFICATION PAYS (UPDATE)                                      │
+│     User: Clic "Modifier" sur carte pays                               │
+│      ↓                                                                  │
+│     Modal s'ouvre (mode: 'edit', data: country)                        │
+│      ↓                                                                  │
+│     Formulaire pré-rempli avec données existantes                      │
+│      ↓                                                                  │
+│     User modifie (ex: name: "France" → "République Française")         │
+│      ↓                                                                  │
+│     updateMutation.mutate() → PUT /admin/config/.../FR                 │
+│      ↓                                                                  │
+│     onSuccess:                                                          │
+│       - invalidateQueries(['countries-config'])                        │
+│       - Toast "✅ Pays modifié"                                         │
+│       - Modal se ferme                                                 │
+│       - Carte mise à jour                                              │
+│                                                                         │
+│  4. 🗑️ SUPPRESSION PAYS (DELETE - avec Optimistic Update)             │
+│     User: Clic "Supprimer"                                             │
+│      ↓                                                                  │
+│     Confirmation: "Supprimer France ?"                                 │
+│      ↓                                                                  │
+│     User confirme                                                       │
+│      ↓                                                                  │
+│     deleteMutation.mutate({ language: "FR", code: "FR" })              │
+│      ↓                                                                  │
+│     ⚡ onMutate (AVANT appel serveur):                                 │
+│       - cancelQueries(['countries-config'])                            │
+│       - Sauvegarder état actuel (backup)                               │
+│       - Mettre à jour cache (retirer pays)                             │
+│       - UI: Carte disparaît IMMÉDIATEMENT                              │
+│      ↓                                                                  │
+│     Appel serveur: DELETE /admin/config/.../FR/FR                      │
+│      ↓                                                                  │
+│     Si ✅ onSuccess:                                                    │
+│       - Toast "🗑️ Pays supprimé"                                       │
+│       - Cache déjà à jour (rien à faire)                               │
+│      ↓                                                                  │
+│     Si ❌ onError:                                                      │
+│       - Restaurer backup (carte réapparaît)                            │
+│       - Toast "❌ Erreur suppression"                                   │
+│                                                                         │
+│  5. 🔄 CHANGEMENT LANGUE                                               │
+│     User: Clic sur langue (ex: FR → EN)                                │
+│      ↓                                                                  │
+│     setSelectedLanguage('EN')                                          │
+│      ↓                                                                  │
+│     countries = countriesConfig?.['EN']                                │
+│      ↓                                                                  │
+│     Liste pays mise à jour (affiche pays anglais)                      │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 🎨 Diagramme Architecture Mermaid
+
+```mermaid
+graph TB
+    subgraph Pages["📄 Pages"]
+        CP["ConfigurationPage<br/><small>Orchestration CRUD</small>"]
+    end
+    
+    subgraph Components["🧩 Composants"]
+        LS["LanguageSelector<br/><small>Tabs langues</small>"]
+        CC["CountryCard<br/><small>Affichage pays</small>"]
+        CM["CountryModal<br/><small>Formulaire Create/Edit</small>"]
+    end
+    
+    subgraph Hooks["🪝 Hooks TanStack Query"]
+        UC["useCountries<br/><small>Query READ</small>"]
+        UCC["useCreateCountry<br/><small>Mutation CREATE</small>"]
+        UUC["useUpdateCountry<br/><small>Mutation UPDATE</small>"]
+        UDC["useDeleteCountry<br/><small>Mutation DELETE + Optimistic</small>"]
+    end
+    
+    subgraph Services["⚙️ Services API"]
+        API["api.ts<br/><small>getCountries()<br/>createCountry()<br/>updateCountry()<br/>deleteCountry()</small>"]
+    end
+    
+    subgraph Backend["🖥️ Backend API"]
+        R1["GET /geographic/countries"]
+        R2["POST /admin/config/countries-languages"]
+        R3["PUT /admin/config/.../language"]
+        R4["DELETE /admin/config/.../language/code"]
+    end
+    
+    subgraph State["💾 État Global"]
+        QC["QueryClient Cache<br/><small>countries-config</small>"]
+    end
+    
+    subgraph UI["🎭 UI Feedback"]
+        TOAST["React Hot Toast<br/><small>Notifications</small>"]
+    end
+    
+    CP -->|"utilise"| LS
+    CP -->|"rend"| CC
+    CP -->|"ouvre"| CM
+    CP -->|"lit"| UC
+    CP -->|"crée"| UCC
+    CP -->|"modifie"| UUC
+    CP -->|"supprime"| UDC
+    
+    CC -->|"onEdit"| CM
+    CC -->|"onDelete"| UDC
+    
+    CM -->|"onSubmit"| UCC
+    CM -->|"onSubmit"| UUC
+    
+    UC -->|"lit"| QC
+    UC -->|"appelle"| API
+    
+    UCC -->|"écrit"| QC
+    UCC -->|"appelle"| API
+    UCC -->|"affiche"| TOAST
+    
+    UUC -->|"écrit"| QC
+    UUC -->|"appelle"| API
+    UUC -->|"affiche"| TOAST
+    
+    UDC -->|"écrit (optimistic)"| QC
+    UDC -->|"appelle"| API
+    UDC -->|"affiche"| TOAST
+    
+    API -->|"GET"| R1
+    API -->|"POST"| R2
+    API -->|"PUT"| R3
+    API -->|"DELETE"| R4
+    
+    R1 -->|"retourne"| QC
+    R2 -->|"invalide"| QC
+    R3 -->|"invalide"| QC
+    R4 -->|"confirme/rollback"| QC
+    
+    style Pages fill:#e1bee7
+    style Components fill:#c5e1a5
+    style Hooks fill:#ffccbc
+    style Services fill:#fff9c4
+    style Backend fill:#b2dfdb
+    style State fill:#ffeb3b
+    style UI fill:#f8bbd0
+```
+
+---
+
+### 🎓 Checklist Étape 6 - CRUD Configuration
+
+**Installation** :
+- [ ] Aucune dépendance supplémentaire (react-hot-toast déjà installé)
+
+**Service API** :
+- [ ] Tu as ajouté les 4 fonctions CRUD dans `services/api.ts`
+- [ ] Tu as défini les interfaces `Country`, `CountriesConfig`, `CountryInput`
+
+**Hooks** :
+- [ ] Tu as créé `useCountries.ts` (Query READ)
+- [ ] Tu as créé `useCreateCountry.ts` (Mutation CREATE)
+- [ ] Tu as créé `useUpdateCountry.ts` (Mutation UPDATE)
+- [ ] Tu as créé `useDeleteCountry.ts` (Mutation DELETE avec optimistic update)
+
+**Composants** :
+- [ ] Tu as créé `CountryCard.tsx` avec boutons Modifier/Supprimer
+- [ ] Tu as créé `CountryModal.tsx` (mode dual create/edit)
+- [ ] Tu as créé `LanguageSelector.tsx` (tabs langues)
+
+**Page** :
+- [ ] Tu as créé `ConfigurationPage.tsx`
+- [ ] Tu as ajouté la route `/config` dans `App.tsx`
+- [ ] Tu as ajouté le lien dans `Sidebar.tsx`
+
+**Concepts React Compris** :
+- [ ] Tu comprends le **pattern CRUD** (Create, Read, Update, Delete)
+- [ ] Tu sais créer une **modal** avec backdrop + ESC key
+- [ ] Tu comprends les **formulaires contrôlés** avec `useState`
+- [ ] Tu comprends le **conditional rendering** (`{isOpen && <Modal />}`)
+- [ ] Tu sais implémenter les **optimistic updates** avec TanStack Query
+- [ ] Tu comprends `onMutate`, `onError`, `onSuccess` et le contexte
+
+**Tests** :
+- [ ] Tu peux afficher la liste des pays par langue
+- [ ] Le clic "Ajouter" ouvre la modal en mode CREATE
+- [ ] Le formulaire CREATE valide les données et crée un pays
+- [ ] Le clic "Modifier" ouvre la modal en mode EDIT avec données pré-remplies
+- [ ] Le formulaire EDIT sauvegarde les modifications
+- [ ] Le clic "Supprimer" retire le pays instantanément (optimistic)
+- [ ] Si erreur serveur, le pays réapparaît (rollback)
+- [ ] Les toasts s'affichent pour chaque action
+- [ ] Le changement de langue affiche les bons pays
+
+**Optionnel Avancé** :
+- [ ] Tu as ajouté la validation Zod pour les formulaires
+- [ ] Tu as implémenté react-hook-form pour gestion avancée
+- [ ] Tu as ajouté confirmation élégante (custom modal) au lieu de `window.confirm()`
+- [ ] Tu as implémenté ESC key listener pour fermer modal
+- [ ] Tu as ajouté animations (Framer Motion) pour entrée/sortie modal
+
+---
+
+## 🗓️ ÉTAPE 7 - Page Extraction & Formulaires Avancés ✅
+
+### 🎯 Objectif de l'étape
+
+Créer la **page d'extraction de données** qui permet à l'admin de **vérifier et corriger les informations de contact** (phone, email, URL) et de **valider les critères métier** avant de marquer une ressource comme prête.
+
+**Workflow métier** :
+```
+geo_validated → critical_pending → critical_validated
+                       ↑
+              (Extraction + Validation Critères)
+```
+
+---
+
+### 📚 Les 6 Concepts Clés de Cette Étape
+
+#### 1️⃣ **Formulaires Avancés avec react-hook-form**
+
+**Pourquoi react-hook-form ?**
+
+Jusqu'ici, nous avons utilisé `useState` pour les formulaires (approche simple). Mais pour formulaires complexes (validation, erreurs, performance), **react-hook-form** est le standard :
+
+```tsx
+// ❌ Approche useState (verbose, performance faible)
+const [phone, setPhone] = useState("");
+const [email, setEmail] = useState("");
+const [url, setUrl] = useState("");
+const [errors, setErrors] = useState({});
+
+const handleSubmit = () => {
+  const newErrors = {};
+  if (!validatePhone(phone)) newErrors.phone = "Téléphone invalide";
+  if (!validateEmail(email)) newErrors.email = "Email invalide";
+  // ... beaucoup de code répétitif
+};
+
+// ✅ Avec react-hook-form (concis, performance optimale)
+const { register, handleSubmit, formState: { errors } } = useForm({
+  defaultValues: { phone: "", email: "", url: "" }
+});
+
+const onSubmit = (data) => {
+  // Données déjà validées ✅
+  console.log(data);  // { phone: "3018", email: "...", url: "..." }
+};
+
+return (
+  <form onSubmit={handleSubmit(onSubmit)}>
+    <input {...register("phone", { required: true, pattern: /^[0-9+]+$/ })} />
+    {errors.phone && <span>Téléphone invalide</span>}
+  </form>
+);
+```
+
+**Avantages** :
+- **Performance** : Pas de re-render à chaque frappe (contrôle DOM natif)
+- **Validation** : Règles déclaratives (required, pattern, min, max)
+- **Gestion erreurs** : Automatique avec `formState.errors`
+- **Intégration** : Compatible Zod (validation TypeScript stricte)
+
+---
+
+#### 2️⃣ **Validation avec Zod (Schema Validation)**
+
+**Zod** = Bibliothèque de validation TypeScript avec inférence de types :
+
+```tsx
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
+
+// Définir le schéma de validation
+const extractionSchema = z.object({
+  phone: z.string()
+    .min(1, "Téléphone requis")
+    .regex(/^[0-9+\s-()]+$/, "Format téléphone invalide"),
+  
+  email: z.string()
+    .email("Email invalide")
+    .optional()
+    .or(z.literal("")),  // Accepter chaîne vide
+  
+  url: z.string()
+    .url("URL invalide")
+    .optional()
+    .or(z.literal(""))
+});
+
+// Inférer le type TypeScript automatiquement
+type ExtractionFormData = z.infer<typeof extractionSchema>;
+// → { phone: string, email?: string, url?: string }
+
+// Utiliser avec react-hook-form
+const form = useForm<ExtractionFormData>({
+  resolver: zodResolver(extractionSchema),  // Validation automatique
+  defaultValues: { phone: "", email: "", url: "" }
+});
+```
+
+**Avantages** :
+- **Type-safety** : Types TypeScript générés automatiquement
+- **Validation riche** : Regex, min/max, format email/url, custom rules
+- **Messages d'erreur** : Customisables par règle
+- **Réutilisable** : Même schéma côté backend + frontend
+
+---
+
+#### 3️⃣ **Auto-Save (Sauvegarde Automatique)**
+
+**Concept** : Sauvegarder les modifications après un délai d'inactivité (debounce) :
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│              AUTO-SAVE WORKFLOW                              │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  User tape "301" →  [Attente 2s]  → User continue "3018"   │
+│                        ↓ (annulé)                            │
+│                                                              │
+│  User arrête de taper  →  [Attente 2s]  → 💾 SAVE !         │
+│                            ↓ (compteur)                      │
+│                                                              │
+│  Évite sauvegardes excessives (1 save / 2s au lieu de 4)   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Implémentation avec useDebounce** :
+
+```tsx
+import { useEffect } from 'react';
+import { useDebounce } from 'use-debounce';
+
+const ExtractionForm = ({ resourceId }) => {
+  const form = useForm();
+  const updateMutation = useUpdateExtractedData();
+  
+  // Valeurs du formulaire
+  const formValues = form.watch();
+  
+  // Debounce de 2 secondes
+  const [debouncedValues] = useDebounce(formValues, 2000);
+  
+  // Auto-save quand debouncedValues change
+  useEffect(() => {
+    if (debouncedValues) {
+      updateMutation.mutate({
+        resourceId,
+        data: debouncedValues
+      });
+    }
+  }, [debouncedValues]);
+  
+  return <form>...</form>;
+};
+```
+
+**Installation** : `npm install use-debounce`
+
+---
+
+#### 4️⃣ **Checklists Dynamiques (Critères par Catégorie)**
+
+**Problème** : Chaque catégorie de ressource a des critères différents :
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  CRITÈRES PAR CATÉGORIE                                     │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  📞 Contact Urgence :                                       │
+│    ✓ Numéro gratuit vérifié                                │
+│    ✓ Service 24/7                                          │
+│    ✓ Anonymat garanti                                      │
+│                                                             │
+│  🏛️ Plateforme Signalement :                               │
+│    ✓ Chiffrement données                                   │
+│    ✓ Service anonyme                                       │
+│    ✓ Formulaire accessible <3 clics                        │
+│                                                             │
+│  👮 Autorité Publique :                                     │
+│    ✓ Site officiel gouvernemental                          │
+│    ✓ Informations légales vérifiées                        │
+│    ✓ Coordonnées directes disponibles                      │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Données reçues du backend** :
+
+```json
+GET /sources/{source_id}/validation-criteria
+{
+  "resource_id": "res_001",
+  "category": "contact_urgence",
+  "criteria": [
+    {
+      "id": "crit_001",
+      "description": "Numéro gratuit vérifié",
+      "is_checked": false,
+      "is_required": true
+    },
+    {
+      "id": "crit_002",
+      "description": "Service 24/7",
+      "is_checked": false,
+      "is_required": true
+    }
+  ]
+}
+```
+
+**Composant dynamique** :
+
+```tsx
+const CriteriaChecklist = ({ resourceId }) => {
+  const { data: criteria } = useCriteria(resourceId);
+  const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
+  
+  const toggleCriteria = (id: string) => {
+    setCheckedItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+  
+  return (
+    <div>
+      {criteria?.map(crit => (
+        <label key={crit.id}>
+          <input
+            type="checkbox"
+            checked={checkedItems.has(crit.id)}
+            onChange={() => toggleCriteria(crit.id)}
+          />
+          {crit.description}
+          {crit.is_required && <span>*</span>}
+        </label>
+      ))}
+    </div>
+  );
+};
+```
+
+---
+
+#### 5️⃣ **State Machine (Machine à États)**
+
+**Concept** : Gérer les états complexes d'une UI avec transitions explicites :
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│              STATE MACHINE - ExtractionPage                   │
+├───────────────────────────────────────────────────────────────┤
+│                                                               │
+│      [LOADING]  →  GET /sources/{id}/extracted-data          │
+│          ↓                                                    │
+│      [EDITING]  →  User modifie formulaire                   │
+│          ↓                                                    │
+│      [SAVING]   →  POST /sources/{id}/update-extracted-data  │
+│          ↓                                                    │
+│      [SUCCESS]  →  Toast "✅ Sauvegardé"                      │
+│          ↓                                                    │
+│      [EDITING]  →  Retour édition                            │
+│                                                               │
+│      [ERROR]    →  Si erreur serveur                         │
+│          ↓                                                    │
+│      [EDITING]  →  Retry possible                            │
+│                                                               │
+└───────────────────────────────────────────────────────────────┘
+```
+
+**Implémentation avec useState** :
+
+```tsx
+type FormState = 'loading' | 'editing' | 'saving' | 'success' | 'error';
+
+const ExtractionPage = () => {
+  const [formState, setFormState] = useState<FormState>('loading');
+  
+  // Query données
+  const { data, isLoading } = useExtractedData(resourceId);
+  
+  useEffect(() => {
+    if (isLoading) {
+      setFormState('loading');
+    } else if (data) {
+      setFormState('editing');
+    }
+  }, [isLoading, data]);
+  
+  // Mutation
+  const updateMutation = useUpdateExtractedData({
+    onMutate: () => setFormState('saving'),
+    onSuccess: () => {
+      setFormState('success');
+      setTimeout(() => setFormState('editing'), 2000);  // Retour édition après 2s
+    },
+    onError: () => setFormState('error')
+  });
+  
+  // UI selon état
+  if (formState === 'loading') return <Spinner />;
+  if (formState === 'saving') return <Overlay>Sauvegarde...</Overlay>;
+  
+  return (
+    <form>
+      {formState === 'success' && <Banner>✅ Sauvegardé</Banner>}
+      {formState === 'error' && <Banner>❌ Erreur</Banner>}
+      {/* Formulaire */}
+    </form>
+  );
+};
+```
+
+---
+
+#### 6️⃣ **Validation Critères avant Submit Final**
+
+**Workflow** :
+```
+1. User édite données contact ✅
+2. User coche tous les critères obligatoires ✅
+3. User clique "Valider Définitivement"
+   ↓
+4. Frontend vérifie TOUS critères cochés
+   ↓
+5. Si manquants → Bloquer + Afficher message
+   Si OK → POST /sources/{id}/verify-criteria
+   ↓
+6. Backend vérifie aussi (sécurité double-check)
+   ↓
+7. Si OK → Transition critical_pending → critical_validated
+```
+
+**Implémentation** :
+
+```tsx
+const handleFinalValidation = async () => {
+  // Vérification frontend
+  const requiredCriteria = criteria.filter(c => c.is_required);
+  const allChecked = requiredCriteria.every(c => checkedItems.has(c.id));
+  
+  if (!allChecked) {
+    toast.error("Tous les critères obligatoires doivent être cochés");
+    return;
+  }
+  
+  // Appel backend pour double-check
+  try {
+    await verifyCriteriaMutation.mutateAsync({
+      resourceId,
+      checkedCriteria: Array.from(checkedItems)
+    });
+    
+    // Si OK → Valider ressource
+    await validateCriticalMutation.mutateAsync({ resourceId });
+    
+    toast.success("✅ Ressource validée !");
+    navigate('/dashboard');
+  } catch (error) {
+    toast.error("❌ Validation échouée");
+  }
+};
+```
+
+---
+
+### 🏗️ Architecture des Fichiers
+
+```
+src/
+├── services/
+│   └── api.ts
+│       ├── getExtractedData()
+│       ├── updateExtractedData()
+│       ├── getCriteria()
+│       ├── verifyCriteria()
+│       └── validateCritical()
+│
+├── hooks/
+│   ├── useExtractedData.ts          // Query données extraction
+│   ├── useUpdateExtractedData.ts    // Mutation update (auto-save)
+│   ├── useCriteria.ts               // Query critères
+│   ├── useVerifyCriteria.ts         // Mutation vérification
+│   └── useValidateCritical.ts       // Mutation validation finale
+│
+├── components/
+│   ├── ExtractionForm.tsx           // Formulaire contact (phone, email, URL)
+│   ├── CriteriaChecklist.tsx        // Checklist dynamique critères
+│   ├── ContactField.tsx             // Input avec validation visuelle
+│   └── ValidationBanner.tsx         // Bannière état (saving, success, error)
+│
+└── pages/
+    └── ExtractionPage.tsx           // Orchestration complète
+```
+
+---
+
+### 📝 Implémentation Étape par Étape
+
+---
+
+#### 7.1 - Installation Dépendances
+
+```bash
+npm install react-hook-form @hookform/resolvers zod use-debounce
+```
+
+**Packages** :
+- `react-hook-form` : Gestion formulaires performante
+- `@hookform/resolvers` : Intégration validateurs (Zod, Yup)
+- `zod` : Validation schéma TypeScript
+- `use-debounce` : Debounce hooks (auto-save)
+
+---
+
+#### 7.2 - Service API : Extraction & Critères
+
+**Fichier** : `src/services/api.ts`
+
+```typescript
+// Types
+export interface ExtractedData {
+  resource_id: string;
+  phone: string;
+  email?: string;
+  url?: string;
+  last_updated: string;
+}
+
+export interface ValidationCriterion {
+  id: string;
+  description: string;
+  is_checked: boolean;
+  is_required: boolean;
+}
+
+export interface CriteriaResponse {
+  resource_id: string;
+  category: string;
+  criteria: ValidationCriterion[];
+}
+
+export interface UpdateExtractedDataRequest {
+  phone: string;
+  email?: string;
+  url?: string;
+}
+
+export interface VerifyCriteriaRequest {
+  criteria_ids: string[];
+}
+
+// GET - Récupérer données extraites
+export const getExtractedData = async (
+  resourceId: string
+): Promise<ExtractedData> => {
+  const response = await fetch(
+    `${API_BASE_URL}/sources/${resourceId}/extracted-data`,
+    {
+      headers: { 'Authorization': `Bearer ${API_TOKEN}` }
+    }
+  );
+  
+  if (!response.ok) {
+    throw new Error('Erreur récupération données extraites');
+  }
+  
+  return response.json();
+};
+
+// POST - Mettre à jour données extraites
+export const updateExtractedData = async (
+  resourceId: string,
+  data: UpdateExtractedDataRequest
+): Promise<void> => {
+  const response = await fetch(
+    `${API_BASE_URL}/sources/${resourceId}/update-extracted-data`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${API_TOKEN}`
+      },
+      body: JSON.stringify(data)
+    }
+  );
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Erreur mise à jour données');
+  }
+};
+
+// GET - Récupérer critères validation
+export const getCriteria = async (
+  resourceId: string
+): Promise<CriteriaResponse> => {
+  const response = await fetch(
+    `${API_BASE_URL}/sources/${resourceId}/validation-criteria`,
+    {
+      headers: { 'Authorization': `Bearer ${API_TOKEN}` }
+    }
+  );
+  
+  if (!response.ok) {
+    throw new Error('Erreur récupération critères');
+  }
+  
+  return response.json();
+};
+
+// POST - Vérifier critères cochés
+export const verifyCriteria = async (
+  resourceId: string,
+  request: VerifyCriteriaRequest
+): Promise<{ all_checked: boolean; missing: string[] }> => {
+  const response = await fetch(
+    `${API_BASE_URL}/sources/${resourceId}/verify-criteria`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${API_TOKEN}`
+      },
+      body: JSON.stringify(request)
+    }
+  );
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Erreur vérification critères');
+  }
+  
+  return response.json();
+};
+
+// POST - Validation critique finale
+export const validateCritical = async (
+  resourceId: string
+): Promise<void> => {
+  const response = await fetch(
+    `${API_BASE_URL}/sources/validate`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${API_TOKEN}`
+      },
+      body: JSON.stringify({
+        source_id: resourceId,
+        action: 'validate_critical'
+      })
+    }
+  );
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Erreur validation critique');
+  }
+};
+```
+
+---
+
+#### 7.3 - Hook useExtractedData : Récupération Données
+
+**Fichier** : `src/hooks/useExtractedData.ts`
+
+```typescript
+import { useQuery } from '@tanstack/react-query';
+import { getExtractedData, ExtractedData } from '../services/api';
+
+export const useExtractedData = (resourceId: string) => {
+  return useQuery<ExtractedData>({
+    queryKey: ['extracted-data', resourceId],
+    queryFn: () => getExtractedData(resourceId),
+    enabled: !!resourceId,  // Seulement si resourceId fourni
+  });
+};
+```
+
+---
+
+#### 7.4 - Hook useUpdateExtractedData : Auto-Save
+
+**Fichier** : `src/hooks/useUpdateExtractedData.ts`
+
+```typescript
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
+import { updateExtractedData, UpdateExtractedDataRequest } from '../services/api';
+
+export const useUpdateExtractedData = (resourceId: string) => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (data: UpdateExtractedDataRequest) => 
+      updateExtractedData(resourceId, data),
+    
+    onSuccess: () => {
+      // Invalider cache pour recharger
+      queryClient.invalidateQueries({ 
+        queryKey: ['extracted-data', resourceId] 
+      });
+      
+      // Toast discret (auto-save fréquent)
+      toast.success('💾 Sauvegardé', { duration: 1500 });
+    },
+    
+    onError: (error: Error) => {
+      toast.error(`❌ ${error.message}`);
+    }
+  });
+};
+```
+
+---
+
+#### 7.5 - Hook useCriteria : Récupération Critères
+
+**Fichier** : `src/hooks/useCriteria.ts`
+
+```typescript
+import { useQuery } from '@tanstack/react-query';
+import { getCriteria, CriteriaResponse } from '../services/api';
+
+export const useCriteria = (resourceId: string) => {
+  return useQuery<CriteriaResponse>({
+    queryKey: ['criteria', resourceId],
+    queryFn: () => getCriteria(resourceId),
+    enabled: !!resourceId,
+  });
+};
+```
+
+---
+
+#### 7.6 - Hook useVerifyCriteria : Vérification Critique
+
+**Fichier** : `src/hooks/useVerifyCriteria.ts`
+
+```typescript
+import { useMutation } from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
+import { verifyCriteria, VerifyCriteriaRequest } from '../services/api';
+
+export const useVerifyCriteria = (resourceId: string) => {
+  return useMutation({
+    mutationFn: (request: VerifyCriteriaRequest) => 
+      verifyCriteria(resourceId, request),
+    
+    onError: (error: Error) => {
+      toast.error(`❌ ${error.message}`);
+    }
+  });
+};
+```
+
+---
+
+#### 7.7 - Hook useValidateCritical : Validation Finale
+
+**Fichier** : `src/hooks/useValidateCritical.ts`
+
+```typescript
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
+import { validateCritical } from '../services/api';
+
+export const useValidateCritical = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: validateCritical,
+    
+    onSuccess: () => {
+      // Invalider queries ressources
+      queryClient.invalidateQueries({ queryKey: ['resources'] });
+      queryClient.invalidateQueries({ queryKey: ['resources-by-status'] });
+      
+      toast.success('✅ Ressource validée avec succès !');
+    },
+    
+    onError: (error: Error) => {
+      toast.error(`❌ ${error.message}`);
+    }
+  });
+};
+```
+
+---
+
+#### 7.8 - Schéma Validation Zod
+
+**Fichier** : `src/schemas/extractionSchema.ts`
+
+```typescript
+import { z } from 'zod';
+
+export const extractionSchema = z.object({
+  phone: z.string()
+    .min(1, "Le téléphone est requis")
+    .regex(
+      /^[0-9+\s\-()]+$/,
+      "Format invalide (chiffres, +, espaces, - et () autorisés)"
+    ),
+  
+  email: z.string()
+    .email("Email invalide")
+    .optional()
+    .or(z.literal("")),  // Accepter chaîne vide comme optionnel
+  
+  url: z.string()
+    .url("URL invalide (doit commencer par http:// ou https://)")
+    .optional()
+    .or(z.literal(""))
+});
+
+export type ExtractionFormData = z.infer<typeof extractionSchema>;
+```
+
+---
+
+#### 7.9 - Composant ContactField : Input avec Validation Visuelle
+
+**Fichier** : `src/components/ContactField.tsx`
+
+```tsx
+import React from 'react';
+import { UseFormRegister, FieldError } from 'react-hook-form';
+import { ExtractionFormData } from '../schemas/extractionSchema';
+
+interface ContactFieldProps {
+  name: keyof ExtractionFormData;
+  label: string;
+  placeholder: string;
+  type?: 'text' | 'email' | 'url' | 'tel';
+  required?: boolean;
+  register: UseFormRegister<ExtractionFormData>;
+  error?: FieldError;
+  icon?: string;
+}
+
+export const ContactField: React.FC<ContactFieldProps> = ({
+  name,
+  label,
+  placeholder,
+  type = 'text',
+  required = false,
+  register,
+  error,
+  icon
+}) => {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        {icon && <span className="mr-2">{icon}</span>}
+        {label}
+        {required && <span className="text-red-500 ml-1">*</span>}
+      </label>
+      
+      <input
+        type={type}
+        {...register(name)}
+        placeholder={placeholder}
+        className={`
+          w-full px-4 py-2 border rounded-lg transition-all
+          focus:ring-2 focus:ring-blue-500 focus:border-transparent
+          ${error 
+            ? 'border-red-300 bg-red-50' 
+            : 'border-gray-300 hover:border-gray-400'
+          }
+        `}
+      />
+      
+      {error && (
+        <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
+          <span>⚠️</span> {error.message}
+        </p>
+      )}
+    </div>
+  );
+};
+```
+
+**🎓 Explications** :
+- **{...register(name)}** : Spread react-hook-form controller (gère value, onChange, onBlur)
+- **error conditional styling** : Bordure rouge + fond rose si erreur
+- **Icon prop** : Emoji visuel (📞 pour téléphone, ✉️ pour email)
+
+---
+
+#### 7.10 - Composant CriteriaChecklist : Checklist Dynamique
+
+**Fichier** : `src/components/CriteriaChecklist.tsx`
+
+```tsx
+import React, { useState, useEffect } from 'react';
+import { ValidationCriterion } from '../services/api';
+
+interface CriteriaChecklistProps {
+  criteria: ValidationCriterion[];
+  onCheckedChange: (checkedIds: string[]) => void;
+}
+
+export const CriteriaChecklist: React.FC<CriteriaChecklistProps> = ({
+  criteria,
+  onCheckedChange
+}) => {
+  const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
+  
+  // Initialiser avec critères déjà cochés
+  useEffect(() => {
+    const initialChecked = criteria
+      .filter(c => c.is_checked)
+      .map(c => c.id);
+    setCheckedItems(new Set(initialChecked));
+  }, [criteria]);
+  
+  // Notifier parent des changements
+  useEffect(() => {
+    onCheckedChange(Array.from(checkedItems));
+  }, [checkedItems, onCheckedChange]);
+  
+  const toggleCriteria = (id: string) => {
+    setCheckedItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+  
+  const requiredCount = criteria.filter(c => c.is_required).length;
+  const checkedRequiredCount = criteria
+    .filter(c => c.is_required && checkedItems.has(c.id))
+    .length;
+  
+  return (
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-gray-900">
+          ✅ Critères de Validation
+        </h3>
+        <span className="text-sm text-gray-600">
+          {checkedRequiredCount} / {requiredCount} obligatoires cochés
+        </span>
+      </div>
+      
+      {/* Liste critères */}
+      <div className="space-y-2">
+        {criteria.map(criterion => {
+          const isChecked = checkedItems.has(criterion.id);
+          
+          return (
+            <label
+              key={criterion.id}
+              className={`
+                flex items-start gap-3 p-3 border rounded-lg cursor-pointer
+                transition-all
+                ${isChecked 
+                  ? 'bg-green-50 border-green-300' 
+                  : 'bg-white border-gray-200 hover:bg-gray-50'
+                }
+              `}
+            >
+              <input
+                type="checkbox"
+                checked={isChecked}
+                onChange={() => toggleCriteria(criterion.id)}
+                className="mt-1 w-5 h-5 text-green-600 rounded focus:ring-2 focus:ring-green-500"
+              />
+              
+              <div className="flex-1">
+                <span className={`
+                  font-medium
+                  ${isChecked ? 'text-green-800' : 'text-gray-800'}
+                `}>
+                  {criterion.description}
+                  {criterion.is_required && (
+                    <span className="text-red-500 ml-1">*</span>
+                  )}
+                </span>
+                
+                {criterion.is_required && !isChecked && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Obligatoire pour valider la ressource
+                  </p>
+                )}
+              </div>
+              
+              {isChecked && <span className="text-green-600 text-xl">✓</span>}
+            </label>
+          );
+        })}
+      </div>
+      
+      {/* Message alerte si manquants */}
+      {checkedRequiredCount < requiredCount && (
+        <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+          <span className="text-yellow-600 text-xl">⚠️</span>
+          <p className="text-sm text-yellow-800">
+            <strong>Attention :</strong> Tous les critères obligatoires doivent être cochés avant validation finale.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
+```
+
+**🎓 Explications** :
+- **Set<string>** : Structure de données efficace pour stockage IDs uniques
+- **useEffect initialization** : Pré-coche critères déjà validés (backend persiste état)
+- **onCheckedChange callback** : Remonte état au parent pour validation
+- **Visual feedback** : Bordure verte + fond vert clair + checkmark si coché
+- **Warning banner** : Alerte si critères obligatoires manquants
+
+---
+
+#### 7.11 - Composant ExtractionForm : Formulaire Principal
+
+**Fichier** : `src/components/ExtractionForm.tsx`
+
+```tsx
+import React, { useEffect } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useDebounce } from 'use-debounce';
+import { extractionSchema, ExtractionFormData } from '../schemas/extractionSchema';
+import { ContactField } from './ContactField';
+import { ExtractedData } from '../services/api';
+
+interface ExtractionFormProps {
+  initialData: ExtractedData;
+  onAutoSave: (data: ExtractionFormData) => void;
+  isSaving: boolean;
+}
+
+export const ExtractionForm: React.FC<ExtractionFormProps> = ({
+  initialData,
+  onAutoSave,
+  isSaving
+}) => {
+  // Form setup avec Zod validation
+  const form = useForm<ExtractionFormData>({
+    resolver: zodResolver(extractionSchema),
+    defaultValues: {
+      phone: initialData.phone || '',
+      email: initialData.email || '',
+      url: initialData.url || ''
+    }
+  });
+  
+  const { register, watch, formState: { errors } } = form;
+  
+  // Surveiller toutes les valeurs
+  const formValues = watch();
+  
+  // Debounce 2 secondes
+  const [debouncedValues] = useDebounce(formValues, 2000);
+  
+  // Auto-save quand valeurs debounced changent
+  useEffect(() => {
+    if (debouncedValues && form.formState.isDirty) {
+      onAutoSave(debouncedValues);
+    }
+  }, [debouncedValues]);
+  
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-gray-900">
+          📋 Données de Contact
+        </h3>
+        {isSaving && (
+          <div className="flex items-center gap-2 text-sm text-blue-600">
+            <div className="animate-spin">💾</div>
+            <span>Sauvegarde...</span>
+          </div>
+        )}
+      </div>
+      
+      {/* Champs */}
+      <div className="space-y-4">
+        <ContactField
+          name="phone"
+          label="Téléphone"
+          placeholder="Ex: 3018 ou +33 1 23 45 67 89"
+          type="tel"
+          required
+          icon="📞"
+          register={register}
+          error={errors.phone}
+        />
+        
+        <ContactField
+          name="email"
+          label="Email"
+          placeholder="Ex: contact@example.fr"
+          type="email"
+          icon="✉️"
+          register={register}
+          error={errors.email}
+        />
+        
+        <ContactField
+          name="url"
+          label="Site Web"
+          placeholder="Ex: https://www.example.fr"
+          type="url"
+          icon="🌐"
+          register={register}
+          error={errors.url}
+        />
+      </div>
+      
+      {/* Info auto-save */}
+      <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+        <span className="text-blue-600">ℹ️</span>
+        <p className="text-sm text-blue-800">
+          <strong>Sauve automatique :</strong> Modifications enregistrées 2 secondes après arrêt de frappe
+        </p>
+      </div>
+    </div>
+  );
+};
+```
+
+**🎓 Explications** :
+- **useForm + zodResolver** : Validation automatique avec schéma Zod
+- **watch()** : Observe toutes les valeurs du formulaire en temps réel
+- **useDebounce** : Attend 2s d'inactivité avant de déclencher auto-save
+- **form.formState.isDirty** : ✅ true si formulaire modifié depuis chargement initial
+- **isSaving prop** : Affiche spinner "Sauvegarde..." pendant mutation
+
+---
+
+#### 7.12 - Page ExtractionPage : Orchestration Complète
+
+**Fichier** : `src/pages/ExtractionPage.tsx`
+
+```tsx
+import React, { useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { ExtractionForm } from '../components/ExtractionForm';
+import { CriteriaChecklist } from '../components/CriteriaChecklist';
+import { useExtractedData } from '../hooks/useExtractedData';
+import { useUpdateExtractedData } from '../hooks/useUpdateExtractedData';
+import { useCriteria } from '../hooks/useCriteria';
+import { useVerifyCriteria } from '../hooks/useVerifyCriteria';
+import { useValidateCritical } from '../hooks/useValidateCritical';
+import { ExtractionFormData } from '../schemas/extractionSchema';
+import { toast } from 'react-hot-toast';
+
+export const ExtractionPage: React.FC = () => {
+  const { resourceId } = useParams<{ resourceId: string }>();
+  const navigate = useNavigate();
+  
+  const [checkedCriteria, setCheckedCriteria] = useState<string[]>([]);
+  
+  // Queries
+  const { 
+    data: extractedData, 
+    isLoading: isLoadingData, 
+    isError: isErrorData 
+  } = useExtractedData(resourceId!);
+  
+  const { 
+    data: criteriaData, 
+    isLoading: isLoadingCriteria, 
+    isError: isErrorCriteria 
+  } = useCriteria(resourceId!);
+  
+  // Mutations
+  const updateMutation = useUpdateExtractedData(resourceId!);
+  const verifyMutation = useVerifyCriteria(resourceId!);
+  const validateMutation = useValidateCritical();
+  
+  // Handler Auto-Save
+  const handleAutoSave = (data: ExtractionFormData) => {
+    updateMutation.mutate({
+      phone: data.phone,
+      email: data.email || undefined,
+      url: data.url || undefined
+    });
+  };
+  
+  // Handler Validation Finale
+  const handleFinalValidation = async () => {
+    if (!criteriaData) return;
+    
+    // Vérifier critères obligatoires
+    const requiredCriteria = criteriaData.criteria.filter(c => c.is_required);
+    const allRequiredChecked = requiredCriteria.every(c => 
+      checkedCriteria.includes(c.id)
+    );
+    
+    if (!allRequiredChecked) {
+      toast.error("⚠️ Tous les critères obligatoires doivent être cochés");
+      return;
+    }
+    
+    // Vérification backend
+    try {
+      const verifyResult = await verifyMutation.mutateAsync({
+        criteria_ids: checkedCriteria
+      });
+      
+      if (!verifyResult.all_checked) {
+        toast.error(`❌ Critères manquants : ${verifyResult.missing.join(', ')}`);
+        return;
+      }
+      
+      // Validation finale
+      await validateMutation.mutateAsync(resourceId!);
+      
+      // Redirection
+      toast.success("✅ Ressource validée avec succès !");
+      navigate('/dashboard');
+      
+    } catch (error) {
+      console.error('Erreur validation:', error);
+    }
+  };
+  
+  // Loading state
+  if (isLoadingData || isLoadingCriteria) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="animate-spin text-4xl mb-4">⏳</div>
+          <p className="text-gray-600">Chargement des données...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  // Error state
+  if (isErrorData || isErrorCriteria || !extractedData || !criteriaData) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+        <p className="text-red-800">❌ Erreur chargement données ressource</p>
+        <button
+          onClick={() => navigate('/validation')}
+          className="mt-3 text-blue-600 hover:underline"
+        >
+          ← Retour à la liste
+        </button>
+      </div>
+    );
+  }
+  
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <button
+            onClick={() => navigate('/validation')}
+            className="text-blue-600 hover:underline mb-2"
+          >
+            ← Retour à la liste
+          </button>
+          <h1 className="text-3xl font-bold text-gray-900">
+            📝 Extraction & Validation
+          </h1>
+          <p className="text-gray-600 mt-1">
+            Ressource ID: <code className="bg-gray-100 px-2 py-1 rounded">{resourceId}</code>
+          </p>
+        </div>
+      </div>
+      
+      {/* Formulaire Extraction */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <ExtractionForm
+          initialData={extractedData}
+          onAutoSave={handleAutoSave}
+          isSaving={updateMutation.isPending}
+        />
+      </div>
+      
+      {/* Checklist Critères */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <CriteriaChecklist
+          criteria={criteriaData.criteria}
+          onCheckedChange={setCheckedCriteria}
+        />
+      </div>
+      
+      {/* Actions Finales */}
+      <div className="flex items-center justify-between bg-gray-50 rounded-lg border border-gray-200 p-4">
+        <div className="text-sm text-gray-600">
+          Vérifie les informations et coche tous les critères avant validation
+        </div>
+        <button
+          onClick={handleFinalValidation}
+          disabled={validateMutation.isPending}
+          className="px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {validateMutation.isPending ? (
+            <span className="flex items-center gap-2">
+              <span className="animate-spin">⏳</span>
+              Validation en cours...
+            </span>
+          ) : (
+            '✅ Valider Définitivement'
+          )}
+        </button>
+      </div>
+      
+      {/* Info Workflow */}
+      <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <span className="text-blue-600 text-xl">ℹ️</span>
+        <div className="text-sm text-blue-800">
+          <p className="font-semibold mb-1">Workflow de validation :</p>
+          <ol className="list-decimal ml-4 space-y-1">
+            <li>Modifier les données de contact si nécessaire</li>
+            <li>Cocher tous les critères obligatoires (marqués par *)</li>
+            <li>Cliquer sur "Valider Définitivement"</li>
+            <li>La ressource passera en statut <code className="bg-blue-100 px-1 rounded">critical_validated</code></li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  );
+};
+```
+
+**🎓 Explications** :
+- **useParams()** : Récupère `resourceId` depuis URL (ex: `/extraction/:resourceId`)
+- **État checkedCriteria** : Tableau IDs critères cochés (remonté par CriteriaChecklist)
+- **handleAutoSave** : Callback passé à ExtractionForm pour mutations debounced
+- **handleFinalValidation** : 
+  1. Vérifie frontend critères obligatoires
+  2. Appelle backend `verify-criteria` (double-check sécurité)
+  3. Si OK → Appelle `validate` (transition statut)
+  4. Redirige vers dashboard
+- **Loading/Error guards** : Return early si pas de données
+- **Disabled button** : Bouton validation désactivé pendant mutation
+
+---
+
+#### 7.13 - Intégration dans App
+
+**Fichier** : `src/App.tsx`
+
+```tsx
+<Routes>
+  <Route path="/config" element={<ConfigurationPage />} />
+  <Route path="/discovery" element={<DiscoveryPage />} />
+  <Route path="/validation" element={<ValidationPage />} />
+  <Route path="/extraction/:resourceId" element={<ExtractionPage />} />  {/* Nouvelle route */}
+</Routes>
+```
+
+**Fichier** : `src/pages/ValidationPage.tsx` (ajouter navigation)
+
+Dans `ResourceValidationCard.tsx`, ajouter bouton "Extraire" :
+
+```tsx
+<button
+  onClick={() => navigate(`/extraction/${resource.id}`)}
+  className="px-3 py-1.5 text-sm font-medium text-purple-700 bg-purple-50 rounded hover:bg-purple-100"
+>
+  📝 Extraire Données
+</button>
+```
+
+---
+
+### 📊 Workflow Complet - Extraction & Validation
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                   WORKFLOW EXTRACTION & VALIDATION                           │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. 📖 CHARGEMENT PAGE                                                       │
+│     User: Clic "Extraire Données" depuis ValidationPage                     │
+│      ↓                                                                       │
+│     Navigation: /extraction/:resourceId                                      │
+│      ↓                                                                       │
+│     useExtractedData() → GET /sources/{id}/extracted-data                   │
+│     useCriteria() → GET /sources/{id}/validation-criteria                   │
+│      ↓                                                                       │
+│     Page affiche:                                                            │
+│       - Formulaire pré-rempli (phone, email, URL)                           │
+│       - Checklist critères dynamiques selon catégorie                       │
+│                                                                              │
+│  2. ✏️ ÉDITION DONNÉES (avec Auto-Save)                                     │
+│     User: Tape "301" dans champ téléphone                                   │
+│      ↓                                                                       │
+│     watch() détecte changement → formValues = { phone: "301", ... }         │
+│      ↓                                                                       │
+│     [Attente 2 secondes]                                                    │
+│      ↓                                                                       │
+│     User: Continue "3018"                                                    │
+│      ↓                                                                       │
+│     useDebounce réinitialise compteur (annule save précédent)               │
+│      ↓                                                                       │
+│     [Attente 2 secondes]                                                    │
+│      ↓                                                                       │
+│     User: Arrête de taper                                                    │
+│      ↓                                                                       │
+│     useDebounce déclenche → debouncedValues = { phone: "3018", ... }        │
+│      ↓                                                                       │
+│     useEffect() appelle handleAutoSave()                                     │
+│      ↓                                                                       │
+│     updateMutation.mutate() → POST /sources/{id}/update-extracted-data      │
+│      ↓                                                                       │
+│     Backend:                                                                 │
+│       - Valide formats (phone, email, URL)                                  │
+│       - Enregistre dans DB                                                  │
+│       - Enregistre historique modification                                  │
+│      ↓                                                                       │
+│     onSuccess:                                                               │
+│       - invalidateQueries(['extracted-data'])                               │
+│       - Toast "💾 Sauvegardé" (discret, 1.5s)                               │
+│       - isSaving = false (spinner disparaît)                                │
+│                                                                              │
+│  3. ✅ COCHAGE CRITÈRES                                                      │
+│     User: Coche "Numéro gratuit vérifié"                                    │
+│      ↓                                                                       │
+│     toggleCriteria("crit_001")                                               │
+│      ↓                                                                       │
+│     useState: checkedItems.add("crit_001")                                   │
+│      ↓                                                                       │
+│     useEffect déclenche onCheckedChange()                                    │
+│      ↓                                                                       │
+│     Parent ExtractionPage: setCheckedCriteria(["crit_001"])                 │
+│      ↓                                                                       │
+│     UI Updates:                                                              │
+│       - Carte critère → bordure verte + fond vert clair                     │
+│       - Checkmark ✓ apparaît                                                │
+│       - Compteur: "1 / 3 obligatoires cochés"                               │
+│                                                                              │
+│  4. 🚫 TENTATIVE VALIDATION INCOMPLÈTE                                       │
+│     User: Clic "Valider Définitivement" (mais 2/3 critères cochés)          │
+│      ↓                                                                       │
+│     handleFinalValidation()                                                  │
+│      ↓                                                                       │
+│     Vérification frontend:                                                   │
+│       requiredCriteria = 3                                                   │
+│       checkedCriteria.length = 2                                             │
+│       allRequiredChecked = false                                             │
+│      ↓                                                                       │
+│     toast.error("⚠️ Tous critères obligatoires requis")                      │
+│     return; (STOP)                                                           │
+│                                                                              │
+│  5. ✅ VALIDATION COMPLÈTE                                                   │
+│     User: Coche le dernier critère + Clic "Valider Définitivement"          │
+│      ↓                                                                       │
+│     handleFinalValidation()                                                  │
+│      ↓                                                                       │
+│     Vérification frontend: OK (3/3 cochés)                                  │
+│      ↓                                                                       │
+│     verifyMutation.mutateAsync({ criteria_ids: [...] })                     │
+│      ↓                                                                       │
+│     Backend POST /sources/{id}/verify-criteria:                             │
+│       - Vérifie tous obligatoires présents dans request                     │
+│       - Enregistre vérification dans historique                             │
+│       - Retourne: { all_checked: true, missing: [] }                        │
+│      ↓                                                                       │
+│     Si verifyResult.all_checked === false:                                  │
+│       toast.error("❌ Critères manquants: ...")                             │
+│       return; (STOP)                                                         │
+│      ↓                                                                       │
+│     validateMutation.mutateAsync(resourceId)                                 │
+│      ↓                                                                       │
+│     Backend POST /sources/validate:                                          │
+│       - Vérifie critères (double-check)                                     │
+│       - Transition: critical_pending → critical_validated                   │
+│       - Enregistre dans historique                                          │
+│      ↓                                                                       │
+│     onSuccess:                                                               │
+│       - invalidateQueries(['resources', 'resources-by-status'])             │
+│       - toast.success("✅ Ressource validée !")                             │
+│       - navigate('/dashboard')                                              │
+│                                                                              │
+│  6. 🔄 FEEDBACK UTILISATEUR                                                  │
+│     - Auto-save: Toast "💾 Sauvegardé" toutes les 2s d'inactivité          │
+│     - Spinner "Sauvegarde..." pendant mutation                              │
+│     - Checklist: Compteur "2 / 3 obligatoires cochés"                       │
+│     - Critères manquants: Banner jaune "⚠️ Attention"                       │
+│     - Validation bloquée: Toast rouge "⚠️ Tous critères requis"             │
+│     - Validation réussie: Toast vert "✅ Ressource validée !"               │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 🎨 Diagramme Architecture Mermaid
+
+```mermaid
+graph TB
+    subgraph Pages["📄 Pages"]
+        EP["ExtractionPage<br/><small>Orchestration</small>"]
+    end
+    
+    subgraph Components["🧩 Composants"]
+        EF["ExtractionForm<br/><small>Formulaire + Auto-Save</small>"]
+        CC["CriteriaChecklist<br/><small>Checklist dynamique</small>"]
+        CF["ContactField<br/><small>Input + validation</small>"]
+    end
+    
+    subgraph Hooks["🪝 Hooks"]
+        UED["useExtractedData<br/><small>Query données</small>"]
+        UUED["useUpdateExtractedData<br/><small>Mutation auto-save</small>"]
+        UC["useCriteria<br/><small>Query critères</small>"]
+        UVC["useVerifyCriteria<br/><small>Mutation vérification</small>"]
+        UVCrit["useValidateCritical<br/><small>Mutation validation</small>"]
+    end
+    
+    subgraph Services["⚙️ Services"]
+        API["api.ts<br/><small>getExtractedData()<br/>updateExtractedData()<br/>getCriteria()<br/>verifyCriteria()<br/>validateCritical()</small>"]
+    end
+    
+    subgraph RHF["📝 React Hook Form"]
+        FORM["useForm<br/><small>register, watch, errors</small>"]
+        ZOD["Zod Schema<br/><small>Validation règles</small>"]
+    end
+    
+    subgraph Debounce["⏱️ Auto-Save"]
+        WATCH["watch()<br/><small>Observe formValues</small>"]
+        DEB["useDebounce<br/><small>2s delay</small>"]
+    end
+    
+    subgraph Backend["🖥️ Backend"]
+        R1["GET /sources/{id}/extracted-data"]
+        R2["POST /sources/{id}/update-extracted-data"]
+        R3["GET /sources/{id}/validation-criteria"]
+        R4["POST /sources/{id}/verify-criteria"]
+        R5["POST /sources/validate"]
+    end
+    
+    subgraph State["💾 Cache"]
+        QC["QueryClient<br/><small>extracted-data<br/>criteria<br/>resources</small>"]
+    end
+    
+    subgraph UI["🎭 Feedback"]
+        TOAST["React Hot Toast"]
+    end
+    
+    EP -->|"rend"| EF
+    EP -->|"rend"| CC
+    EP -->|"lit"| UED
+    EP -->|"modifie"| UUED
+    EP -->|"lit"| UC
+    EP -->|"vérifie"| UVC
+    EP -->|"valide"| UVCrit
+    
+    EF -->|"utilise"| FORM
+    EF -->|"rend"| CF
+    EF -->|"observe"| WATCH
+    
+    FORM -->|"valide avec"| ZOD
+    
+    WATCH -->|"envoie à"| DEB
+    DEB -->|"déclenche"| UUED
+    
+    UED -->|"appelle"| API
+    UUED -->|"appelle"| API
+    UC -->|"appelle"| API
+    UVC -->|"appelle"| API
+    UVCrit -->|"appelle"| API
+    
+    API -->|"GET"| R1
+    API -->|"POST"| R2
+    API -->|"GET"| R3
+    API -->|"POST"| R4
+    API -->|"POST"| R5
+    
+    R1 -->|"retourne"| QC
+    R2 -->|"invalide"| QC
+    R3 -->|"retourne"| QC
+    R4 -->|"vérifie"| QC
+    R5 -->|"invalide"| QC
+    
+    UUED -->|"affiche"| TOAST
+    UVC -->|"affiche"| TOAST
+    UVCrit -->|"affiche"| TOAST
+    
+    style Pages fill:#e1bee7
+    style Components fill:#c5e1a5
+    style Hooks fill:#ffccbc
+    style Services fill:#fff9c4
+    style RHF fill:#b2dfdb
+    style Debounce fill:#ffeb3b
+    style Backend fill:#b2dfdb
+    style State fill:#ffeb3b
+    style UI fill:#f8bbd0
+```
+
+---
+
+### 🎓 Checklist Étape 7 - Extraction & Validation
+
+**Installation** :
+- [ ] Tu as installé `npm install react-hook-form @hookform/resolvers zod use-debounce`
+
+**Service API** :
+- [ ] Tu as ajouté 5 fonctions: getExtractedData, updateExtractedData, getCriteria, verifyCriteria, validateCritical
+- [ ] Tu as défini les interfaces TypeScript (ExtractedData, ValidationCriterion, etc.)
+
+**Hooks** :
+- [ ] Tu as créé `useExtractedData.ts` (Query)
+- [ ] Tu as créé `useUpdateExtractedData.ts` (Mutation auto-save)
+- [ ] Tu as créé `useCriteria.ts` (Query)
+- [ ] Tu as créé `useVerifyCriteria.ts` (Mutation vérification)
+- [ ] Tu as créé `useValidateCritical.ts` (Mutation validation finale)
+
+**Validation** :
+- [ ] Tu as créé `extractionSchema.ts` avec Zod
+- [ ] Tu comprends `z.string().email()`, `.url()`, `.regex()`, `.optional()`
+
+**Composants** :
+- [ ] Tu as créé `ContactField.tsx` (input avec validation visuelle)
+- [ ] Tu as créé `CriteriaChecklist.tsx` (checklist dynamique)
+- [ ] Tu as créé `ExtractionForm.tsx` (formulaire + auto-save)
+
+**Page** :
+- [ ] Tu as créé `ExtractionPage.tsx`
+- [ ] Tu as ajouté route `/extraction/:resourceId` dans `App.tsx`
+- [ ] Tu as ajouté navigation depuis `ValidationPage`
+
+**Concepts React Compris** :
+- [ ] Tu comprends **react-hook-form** : `register`, `watch`, `handleSubmit`, `formState`
+- [ ] Tu sais utiliser **Zod** pour validation schéma TypeScript
+- [ ] Tu comprends **zodResolver** (intégration react-hook-form + Zod)
+- [ ] Tu sais implémenter **auto-save avec useDebounce** (attente 2s)
+- [ ] Tu comprends **checklists dynamiques** avec `Set<string>`
+- [ ] Tu sais gérer **state machine** (loading, editing, saving, success, error)
+- [ ] Tu comprends **validation frontend + backend** (double-check sécurité)
+
+**Tests** :
+- [ ] Tu peux charger données extraction existantes
+- [ ] Le formulaire est pré-rempli avec données backend
+- [ ] La modification d'un champ déclenche auto-save après 2s
+- [ ] Le toast "💾 Sauvegardé" apparaît
+- [ ] Le spinner "Sauvegarde..." s'affiche pendant mutation
+- [ ] La validation Zod bloque soumission si format invalide
+- [ ] Les critères se chargent dynamiquement selon catégorie
+- [ ] Le clic checkbox coche/décoche critère
+- [ ] Le compteur "2 / 3 obligatoires cochés" se met à jour
+- [ ] Le bouton "Valider" est bloqué si critères manquants
+- [ ] La validation finale vérifie critères + transition statut
+- [ ] Redirection vers dashboard après validation
+
+**Optionnel Avancé** :
+- [ ] Tu as implémenté optimistic updates pour checklist
+- [ ] Tu as ajouté animations pour transitions état
+- [ ] Tu as implémenté confirmation modal au lieu de window.confirm
+- [ ] Tu as ajouté historique modifications visibles (ex: timeline)
+- [ ] Tu as implémenté undo/redo pour éditions
+
+---
+
+### 🔜 Prochaine étape - ÉTAPE 8
+
+On va apprendre :
+- 📊 **Dashboard Analytics** : Visualiser statistiques et progression
+- 📈 **Charts avec Recharts** : Graphiques avancés (bar, line, pie)
+- 🎯 **KPIs & Metrics** : Indicateurs clés de performance
+- 🔄 **Real-time Updates** : WebSocket ou polling pour data live
+
+---
+
+**Dernière mise à jour** : Étape 7 - Extraction & Formulaires Avancés  
 **Statut** : 📝 Document prêt pour implémentation  
-**Prochaine session** : Étape 6 - Extraction Données & Formulaires Avancés
+**Prochaine session** : Étape 8 - Dashboard & Analytics
 

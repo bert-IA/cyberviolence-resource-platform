@@ -1,9 +1,12 @@
-import { useState } from 'react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { ConfigurationPage } from '../../pages/ConfigurationPage'
-import { DiscoveryPage } from '../../pages/DiscoveryPage'
 
-import { Header, type NavigationItem } from '../ui/Header'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { Routes, Route } from 'react-router-dom'
+import { MenuPage } from '../../pages/MenuPage'
+import { ConfigurationPage } from '../../pages/ConfigurationPage'
+import { AppHeader } from '../ui/AppHeader'
+import { DiscoveryPage } from '../../pages/DiscoveryPage'
+import { NotFound } from '../../pages/NotFound'
+
 
 // Configuration TanStack Query
 const queryClient = new QueryClient({
@@ -14,38 +17,31 @@ const queryClient = new QueryClient({
         },
     },
 })
-interface MainAppProps {
-    onDemoClick: () => void
-}
 
-type MainAppPageType = 'configuration' | 'discovery'
 
-export function MainApp({ onDemoClick }: MainAppProps) {
-
-    const [currentPage, setCurrentPage] = useState<MainAppPageType>('configuration')
-    const navigationItems: NavigationItem<MainAppPageType>[] = [
-        { label: 'Configuration Pays', value: 'configuration' },
-        { label: 'Découverte Ressource', value: 'discovery' }
-    ]
+export function MainApp() {
+    const userName = "admin"
 
     return (
+
         <QueryClientProvider client={queryClient}>
             <div className="min-h-screen bg-gray-50">
                 {/* Navigation Tabs */}
-                <Header
-                    title="INTERFACE DE DECOUVERTE DES RESSOURCES"
-                    userName='Admin'
-                    buttonLabel='Démo Tailwind'
-                    onDemoClick={onDemoClick}
-                    navigationItems={navigationItems}
-                    currentPage={currentPage}
-                    onNavigate={setCurrentPage}
-                />
+                <AppHeader userName={userName} />
 
                 {/* Contenu de la page active */}
                 <main>
-                    {currentPage === 'configuration' && <ConfigurationPage />}
-                    {currentPage === 'discovery' && <DiscoveryPage />}
+                    <Routes>
+                        <Route path="/" element={<MenuPage />} />
+                        <Route path="/configuration" element={<ConfigurationPage />} />
+                        <Route path="/decouverte" element={<DiscoveryPage />} />
+                        {/* 
+                        <Route path="/validation" element={<ValidationPage />} />
+                        <Route path="/rag" element={<RagPage />} /> 
+                        */}
+                        <Route path="/*" element={<NotFound />} />
+
+                    </Routes>
                 </main>
             </div>
         </QueryClientProvider>
