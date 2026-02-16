@@ -7039,11 +7039,26 @@ Discovery → Validation → Extraction → RAG
 ```
 
 **Ce qu'on va construire** :
-- 📋 **ValidationPage** : Liste des ressources découvertes à valider
+- � **ValidationOverview** : Vue synthèse avec stats groupées (pays, catégories)
+- 📋 **ValidationPage** : Workflow multi-step avec filtrage intelligent
 - 🎴 **ResourceValidationCard** : Carte ressource avec actions Garder/Rejeter
-- 🎯 **Actions batch** : Valider/Rejeter en masse
+- 🎯 **Actions batch** : Valider/Rejeter en masse par groupe
+- 🔍 **Filtrage dynamique** : Par pays, par catégorie, ou tout afficher
 - 🎨 **Toasts** : Feedback visuel des actions
 - 🔄 **Synchronisation auto** : Cache TanStack Query mis à jour
+- ⚡ **Actions inline** : Validation rapide dans menu Ressources
+
+**Architecture UX** (pattern professionnel) :
+```
+Menu Validation (workflow principal)
+├─ 1️⃣ Vue Synthèse → Choisir filtre
+├─ 2️⃣ Filtrage intelligent → Afficher groupe
+├─ 3️⃣ Revue groupée → Valider/Rejeter lot
+└─ 4️⃣ Feedback → Retour synthèse
+
+Menu Ressources (actions rapides)
+└─ Actions inline ✓✗ pour validation unitaire
+```
 
 ---
 
@@ -7076,15 +7091,23 @@ geo_validated   ← Ressources approuvées (garde)
 deleted         ← Ressources rejetées (suppression)
 ```
 
-**Workflow utilisateur** :
+**Workflow utilisateur (2 modes)** :
+
+**Mode 1 : Validation par groupe (recommandé pour >20 ressources)**
 1. User va sur page "Validation"
-2. Backend fetch toutes les ressources `status=discovered`
-3. User voit les cartes avec scores de confiance
-4. User clique "✅ Garder" → `action: "approve"`
-5. User clique "❌ Rejeter" → `action: "reject"`
-6. Backend met à jour les ressources
-7. Cache TanStack Query se rafraîchit automatiquement
-8. Liste se met à jour sans reload
+2. Backend fetch ressources `status=discovered` + stats groupées
+3. User voit **Vue Synthèse** avec stats par pays/catégories
+4. User clique sur un groupe (ex: "France [25]") → Filtrage
+5. Affiche uniquement les 25 ressources France
+6. User sélectionne lot (checkbox) → Clique "Valider sélection"
+7. Backend met à jour → Cache se rafraîchit → Retour synthèse
+8. Stats mises à jour : "France [12]" (25 - 13 validées)
+
+**Mode 2 : Validation rapide inline (pour actions ponctuelles)**
+1. User consulte page "Ressources" (toutes ressources)
+2. Voit une erreur évidente → Clique icône ✓ ou ✗ inline
+3. Validation/Rejet instantané sans changer de page
+4. Pattern Gmail/Notion : action contextuelle rapide
 
 ---
 
@@ -7246,32 +7269,63 @@ const validateOptimistic = useMutation({
 ```
 src/
 ├── pages/
-│   └── ValidationPage.tsx              # Page principale
+│   ├── ValidationPage.tsx              # Page principale (workflow multi-step)
+│   └── ResourcesPage.tsx               # Page consultation (avec actions inline)
 │
 ├── components/
 │   ├── features/
+│   │   ├── ValidationOverview.tsx      # 🆕 Vue synthèse avec stats groupées
+│   │   ├── ResourceReviewList.tsx      # 🆕 Liste avec filtrage
 │   │   ├── ResourceValidationCard.tsx  # Carte ressource
-│   │   └── ValidationBatchActions.tsx  # Actions en masse
+│   │   ├── ValidationBatchActions.tsx  # Actions en masse
+│   │   └── ResourceRow.tsx             # 🆕 Ligne ressource avec actions inline
 │   │
 │   └── ui/
 │       ├── Badge.tsx                   # Badge de score
+│       ├── StatCard.tsx                # 🆕 Carte statistique (pays, catégorie)
 │       └── Toast  # (react-hot-toast) # Déjà fourni par la lib
 │
 ├── hooks/
 │   ├── useResourcesByStatus.ts         # Fetch ressources par statut
-│   └── useValidateBatch.ts             # Mutation validation
+│   ├── useResourceStats.ts             # 🆕 Fetch stats groupées
+│   ├── useValidateBatch.ts             # Mutation validation batch
+│   └── useValidationWorkflow.ts        # 🆕 État multi-step (useReducer)
 │
 └── services/
-    └── api.ts                          # Ajouter validateBatch()
+    └── api.ts                          # Ajouter validateBatch() + getResourceStats()
+```
+
+#### Workflow Multi-Step avec État
+
+**État du workflow** (géré par `useReducer`) :
+```typescript
+type ValidationState = {
+  step: 'overview' | 'review'          // Étape courante
+  filter: {
+    country?: string                     // Filtre pays actif
+    category?: string                    // Filtre catégorie actif
+  }
+  selectedIds: string[]                  // IDs sélectionnés pour batch
+  groupBy: 'country' | 'category' | 'all' // Groupement actif
+}
+```
+
+**Transitions d'état** :
+```
+1️⃣ Initial → step: 'overview', filter: {}, selectedIds: []
+   
+2️⃣ Clic "France [25]" → step: 'review', filter: { country: 'FR' }
+
+3️⃣ Validation lot → Retour step: 'overview', filter: reset, selectedIds: []
 ```
 
 ---
 
-### 🛠️ Étape 5.1 - Service API : Validation
+### 🛠️ Étape 5.1 - Service API : Validation & Stats
 
 **Fichier** : `src/services/api.ts`
 
-On ajoute la fonction pour appeler l'API de validation :
+On ajoute les fonctions pour appeler l'API de validation et récupérer les stats :
 
 ```typescript
 // src/services/api.ts
@@ -7291,6 +7345,20 @@ export interface ValidationResponse {
   message: string
 }
 
+// 🆕 Interface pour les stats groupées
+export interface ResourceStats {
+  total_pending: number
+  by_country: {
+    [countryCode: string]: {
+      count: number
+      label: string
+    }
+  }
+  by_category: {
+    [category: string]: number
+  }
+}
+
 // === FONCTION VALIDATION ===
 
 export async function validateBatch(
@@ -7306,6 +7374,23 @@ export async function validateBatch(
 
   if (!response.ok) {
     throw new Error(`Validation failed: ${response.statusText}`)
+  }
+
+  return response.json()
+}
+
+// 🆕 FONCTION STATS GROUPÉES
+
+export async function getResourceStats(): Promise<ResourceStats> {
+  const response = await fetch(`${API_BASE_URL}/resources/stats`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch stats: ${response.statusText}`)
   }
 
   return response.json()
@@ -7475,6 +7560,195 @@ if (variables.action === 'approve') {
 - Callback exécuté si échec (status 400+, timeout, etc.)
 - Affiche un toast d'erreur générique
 - Log l'erreur dans la console pour debug
+
+---
+
+### 🛠️ Étape 5.3bis - Hook : useResourceStats (🆕)
+
+**Fichier** : `src/hooks/useResourceStats.ts`
+
+Hook pour récupérer les statistiques groupées (pour la vue synthèse).
+
+```typescript
+// src/hooks/useResourceStats.ts
+
+import { useQuery } from '@tanstack/react-query'
+import { getResourceStats } from '../services/api'
+import type { ResourceStats } from '../services/api'
+
+export function useResourceStats() {
+  return useQuery<ResourceStats>({
+    queryKey: ['resources', 'stats'],
+    queryFn: getResourceStats,
+    staleTime: 1000 * 60,  // 1 minute (stats changent quand on valide)
+    refetchOnWindowFocus: true,  // Refetch quand user revient sur l'onglet
+  })
+}
+```
+
+**📖 Explications** :
+
+1. **queryKey : ['resources', 'stats']**
+   - Cache séparé pour les stats
+   - Sera invalidé quand on valide des ressources
+
+2. **staleTime : 1 minute**
+   - Plus court que les autres queries car les stats changent fréquemment
+   - Après validation, on veut voir les nouvelles stats rapidement
+
+3. **refetchOnWindowFocus : true**
+   - Si user change d'onglet puis revient → refetch automatique
+   - Utile si plusieurs admins travaillent en même temps
+
+**Utilisation** :
+```tsx
+const { data: stats, isLoading } = useResourceStats()
+
+// stats = { total_pending: 75, by_country: {...}, by_category: {...} }
+```
+
+---
+
+### 🛠️ Étape 5.3ter - Hook : useValidationWorkflow (🆕)
+
+**Fichier** : `src/hooks/useValidationWorkflow.ts`
+
+Hook qui gère l'état du workflow multi-step avec `useReducer`.
+
+```typescript
+// src/hooks/useValidationWorkflow.ts
+
+import { useReducer } from 'react'
+
+// === TYPES ===
+
+type ValidationStep = 'overview' | 'review'
+
+type FilterType = {
+  country?: string
+  category?: string
+}
+
+type ValidationState = {
+  step: ValidationStep
+  filter: FilterType
+  selectedIds: string[]
+  groupBy: 'country' | 'category' | 'all'
+}
+
+type ValidationAction =
+  | { type: 'SELECT_COUNTRY'; country: string }
+  | { type: 'SELECT_CATEGORY'; category: string }
+  | { type: 'SHOW_ALL' }
+  | { type: 'BACK_TO_OVERVIEW' }
+  | { type: 'TOGGLE_SELECTION'; id: string }
+  | { type: 'SELECT_ALL'; ids: string[] }
+  | { type: 'CLEAR_SELECTION' }
+
+// === REDUCER ===
+
+function validationReducer(
+  state: ValidationState,
+  action: ValidationAction
+): ValidationState {
+  switch (action.type) {
+    case 'SELECT_COUNTRY':
+      return {
+        ...state,
+        step: 'review',
+        filter: { country: action.country },
+        groupBy: 'country',
+        selectedIds: [],
+      }
+
+    case 'SELECT_CATEGORY':
+      return {
+        ...state,
+        step: 'review',
+        filter: { category: action.category },
+        groupBy: 'category',
+        selectedIds: [],
+      }
+
+    case 'SHOW_ALL':
+      return {
+        ...state,
+        step: 'review',
+        filter: {},
+        groupBy: 'all',
+        selectedIds: [],
+      }
+
+    case 'BACK_TO_OVERVIEW':
+      return {
+        ...state,
+        step: 'overview',
+        filter: {},
+        selectedIds: [],
+      }
+
+    case 'TOGGLE_SELECTION':
+      return {
+        ...state,
+        selectedIds: state.selectedIds.includes(action.id)
+          ? state.selectedIds.filter(id => id !== action.id)
+          : [...state.selectedIds, action.id],
+      }
+
+    case 'SELECT_ALL':
+      return {
+        ...state,
+        selectedIds: action.ids,
+      }
+
+    case 'CLEAR_SELECTION':
+      return {
+        ...state,
+        selectedIds: [],
+      }
+
+    default:
+      return state
+  }
+}
+
+// === HOOK ===
+
+export function useValidationWorkflow() {
+  const [state, dispatch] = useReducer(validationReducer, {
+    step: 'overview',
+    filter: {},
+    selectedIds: [],
+    groupBy: 'all',
+  })
+
+  return { state, dispatch }
+}
+```
+
+**📖 Explications** :
+
+**Pourquoi useReducer au lieu de useState ?**
+- État complexe avec plusieurs propriétés liées
+- Transitions d'état explicites (SELECT_COUNTRY → step: 'review')
+- Pas de risque d'état incohérent (ex: step='overview' mais filter={country: 'FR'})
+
+**Pattern Actions**
+```typescript
+dispatch({ type: 'SELECT_COUNTRY', country: 'FR' })
+// → step: 'review', filter: { country: 'FR' }, selectedIds: []
+```
+
+**Utilisation dans ValidationPage** :
+```tsx
+const { state, dispatch } = useValidationWorkflow()
+
+// Clic sur carte pays
+<StatCard onClick={() => dispatch({ type: 'SELECT_COUNTRY', country: 'FR' })} />
+
+// Retour à la synthèse
+<button onClick={() => dispatch({ type: 'BACK_TO_OVERVIEW' })}>Retour</button>
+```
 
 ---
 
@@ -7774,26 +8048,602 @@ disabled={!hasSelection || isProcessing}
 
 ---
 
-### 🛠️ Étape 5.6 - Page : ValidationPage
+### 🛠️ Étape 5.5bis - Composant : ValidationOverview (🆕)
+
+**Fichier** : `src/components/features/ValidationOverview.tsx`
+
+Vue synthèse avec stats groupées (premier écran du workflow).
+
+```tsx
+// src/components/features/ValidationOverview.tsx
+
+import { StatCard } from '../ui/StatCard'
+import type { ResourceStats } from '../../services/api'
+
+interface ValidationOverviewProps {
+  stats: ResourceStats
+  onSelectCountry: (countryCode: string) => void
+  onSelectCategory: (category: string) => void
+  onShowAll: () => void
+}
+
+export function ValidationOverview({
+  stats,
+  onSelectCountry,
+  onSelectCategory,
+  onShowAll
+}: ValidationOverviewProps) {
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">
+            📊 Ressources en attente de validation
+          </h2>
+          <p className="text-gray-600 mt-1">
+            {stats.total_pending} ressources non validées
+          </p>
+        </div>
+        <button
+          onClick={onShowAll}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          Tout afficher
+        </button>
+      </div>
+
+      {/* Stats par Pays */}
+      <div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">🌍 Par Pays</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {Object.entries(stats.by_country).map(([code, info]) => (
+            <StatCard
+              key={code}
+              title={info.label}
+              count={info.count}
+              icon="🌍"
+              onClick={() => onSelectCountry(code)}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Stats par Catégorie */}
+      <div>
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">🏷️ Par Catégorie</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {Object.entries(stats.by_category).map(([category, count]) => (
+            <StatCard
+              key={category}
+              title={category.replace('_', ' ')}
+              count={count}
+              icon="🏷️"
+              onClick={() => onSelectCategory(category)}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Message vide */}
+      {stats.total_pending === 0 && (
+        <div className="text-center py-16 bg-gray-50 rounded-lg">
+          <span className="text-6xl mb-4 block">✅</span>
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+            Aucune ressource à valider
+          </h3>
+          <p className="text-gray-600">
+            Toutes les ressources découvertes ont été traitées
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+```
+
+**📖 Explications** :
+
+**Object.entries() pour itérer sur les stats**
+```typescript
+Object.entries(stats.by_country)
+// → [['FR', { count: 25, label: 'France' }], ['ES', { count: 30, label: 'Espagne' }]]
+```
+
+**Callbacks de sélection**
+```tsx
+onClick={() => onSelectCountry(code)}
+// Déclenche dispatch({ type: 'SELECT_COUNTRY', country: code }) dans ValidationPage
+```
+
+**Grid responsive**
+```tsx
+className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+// Mobile: 2 colonnes | Tablette: 3 colonnes | Desktop: 4 colonnes
+```
+
+---
+
+### 🛠️ Étape 5.5ter - Composant : StatCard (🆕)
+
+**Fichier** : `src/components/ui/StatCard.tsx`
+
+Carte cliquable pour afficher une statistique.
+
+```tsx
+// src/components/ui/StatCard.tsx
+
+interface StatCardProps {
+  title: string
+  count: number
+  icon: string
+  onClick: () => void
+}
+
+export function StatCard({ title, count, icon, onClick }: StatCardProps) {
+  return (
+    <button
+      onClick={onClick}
+      className="bg-white p-6 rounded-lg shadow hover:shadow-lg transition-all text-left border-2 border-transparent hover:border-blue-500"
+    >
+      <div className="flex items-center gap-3 mb-2">
+        <span className="text-3xl">{icon}</span>
+        <div className="text-3xl font-bold text-gray-900">{count}</div>
+      </div>
+      <div className="text-sm text-gray-600 font-medium capitalize">
+        {title}
+      </div>
+    </button>
+  )
+}
+```
+
+**📖 Explications** :
+
+**Bouton cliquable (pas div)**
+- Meilleur pour l'accessibilité (keyboard navigation)
+- `text-left` : Garde l'alignement à gauche
+
+**Hover states**
+- `hover:shadow-lg` : Ombre plus prononcée au survol
+- `hover:border-blue-500` : Bordure bleue au survol
+- `transition-all` : Animations fluides
+
+---
+
+### 🛠️ Étape 5.5quater - Composant : ResourceReviewList (🆕)
+
+**Fichier** : `src/components/features/ResourceReviewList.tsx`
+
+Liste de ressources avec sélection pour validation groupée.
+
+```tsx
+// src/components/features/ResourceReviewList.tsx
+
+import { ResourceValidationCard } from './ResourceValidationCard'
+import { ValidationBatchActions } from './ValidationBatchActions'
+import type { DiscoveredResource } from '../../services/api'
+
+interface ResourceReviewListProps {
+  resources: DiscoveredResource[]
+  selectedIds: string[]
+  onToggleSelection: (id: string) => void
+  onSelectAll: () => void
+  onApprove: (id: string) => void
+  onReject: (id: string) => void
+  onApproveAll: () => void
+  onRejectAll: () => void
+  isProcessing: boolean
+  onBack: () => void
+}
+
+export function ResourceReviewList({
+  resources,
+  selectedIds,
+  onToggleSelection,
+  onSelectAll,
+  onApprove,
+  onReject,
+  onApproveAll,
+  onRejectAll,
+  isProcessing,
+  onBack
+}: ResourceReviewListProps) {
+  return (
+    <div className="space-y-6">
+      {/* Header avec retour */}
+      <div className="flex items-center gap-4">
+        <button
+          onClick={onBack}
+          className="text-blue-600 hover:text-blue-800 flex items-center gap-2"
+        >
+          ← Retour à la synthèse
+        </button>
+        <div className="text-gray-600">
+          {resources.length} ressource(s) à examiner
+        </div>
+      </div>
+
+      {/* Actions Batch */}
+      <ValidationBatchActions
+        selectedCount={selectedIds.length}
+        totalCount={resources.length}
+        onApproveAll={onApproveAll}
+        onRejectAll={onRejectAll}
+        isProcessing={isProcessing}
+      />
+
+      {/* Sélection rapide */}
+      <div className="flex gap-2">
+        <button
+          onClick={onSelectAll}
+          className="text-sm text-blue-600 hover:text-blue-800"
+        >
+          ☑ Tout sélectionner
+        </button>
+        <button
+          onClick={() => selectedIds.forEach(id => onToggleSelection(id))}
+          className="text-sm text-gray-600 hover:text-gray-800"
+        >
+          ☐ Tout désélectionner
+        </button>
+      </div>
+
+      {/* Liste Ressources */}
+      <div className="space-y-4">
+        {resources.map(resource => (
+          <div key={resource.id} className="relative">
+            {/* Checkbox Sélection */}
+            <div className="absolute top-4 left-4 z-10">
+              <input
+                type="checkbox"
+                checked={selectedIds.includes(resource.id)}
+                onChange={() => onToggleSelection(resource.id)}
+                className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            {/* Carte Ressource */}
+            <div className="pl-12">
+              <ResourceValidationCard
+                resource={resource}
+                onApprove={() => onApprove(resource.id)}
+                onReject={() => onReject(resource.id)}
+                isProcessing={isProcessing}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+```
+
+**📖 Explications** :
+
+**Props drilling**
+- Ce composant reçoit beaucoup de props (14 !)
+- Pattern acceptable car composant de présentation pure
+- Alternative : Context API (plus complexe, overkill ici)
+
+**Bouton "Tout désélectionner"**
+```tsx
+onClick={() => selectedIds.forEach(id => onToggleSelection(id))}
+// Pour chaque ID sélectionné, toggle → déselectionne
+```
+
+---
+
+### 🛠️ Étape 5.6 - Page : ValidationPage (Refactored)
 
 **Fichier** : `src/pages/ValidationPage.tsx`
 
-Page complète qui orchestre tout.
+Page complète avec workflow multi-step.
 
 ```tsx
 // src/pages/ValidationPage.tsx
 
-import { useState } from 'react'
+import { useMemo } from 'react'
 import { useResourcesByStatus } from '../hooks/useResourcesByStatus'
+import { useResourceStats } from '../hooks/useResourceStats'
 import { useValidateBatch } from '../hooks/useValidateBatch'
-import { ResourceValidationCard } from '../components/features/ResourceValidationCard'
-import { ValidationBatchActions } from '../components/features/ValidationBatchActions'
+import { useValidationWorkflow } from '../hooks/useValidationWorkflow'
+import { ValidationOverview } from '../components/features/ValidationOverview'
+import { ResourceReviewList } from '../components/features/ResourceReviewList'
 import { LoadingSpinner } from '../components/ui/LoadingSpinner'
 import { ErrorMessage } from '../components/ui/ErrorMessage'
 
 export function ValidationPage() {
+  // 🔄 État du workflow
+  const { state, dispatch } = useValidationWorkflow()
+  
   // 📊 Fetch ressources à valider
   const { data: resources, isLoading, error, refetch } = useResourcesByStatus('discovered')
+  
+  // 📈 Fetch stats
+  const { data: stats, isLoading: statsLoading } = useResourceStats()
+  
+  // 🔄 Hook de validation
+  const validateBatch = useValidateBatch()
+
+  // === FILTRAGE ===
+  
+  const filteredResources = useMemo(() => {
+    if (!resources) return []
+    
+    let filtered = resources
+    
+    if (state.filter.country) {
+      filtered = filtered.filter(r => r.country === state.filter.country)
+    }
+    
+    if (state.filter.category) {
+      filtered = filtered.filter(r => r.category === state.filter.category)
+    }
+    
+    return filtered
+  }, [resources, state.filter])
+
+  // === HANDLERS ===
+
+  const handleApprove = (sourceId: string) => {
+    validateBatch.mutate({
+      source_ids: [sourceId],
+      action: 'approve'
+    })
+  }
+
+  const handleReject = (sourceId: string) => {
+    validateBatch.mutate({
+      source_ids: [sourceId],
+      action: 'reject'
+    })
+  }
+
+  const handleApproveAll = () => {
+    if (state.selectedIds.length === 0) return
+    
+    validateBatch.mutate({
+      source_ids: state.selectedIds,
+      action: 'approve'
+    }, {
+      onSuccess: () => {
+        dispatch({ type: 'BACK_TO_OVERVIEW' })
+      }
+    })
+  }
+
+  const handleRejectAll = () => {
+    if (state.selectedIds.length === 0) return
+    
+    validateBatch.mutate({
+      source_ids: state.selectedIds,
+      action: 'reject'
+    }, {
+      onSuccess: () => {
+        dispatch({ type: 'BACK_TO_OVERVIEW' })
+      }
+    })
+  }
+
+  const handleSelectAll = () => {
+    dispatch({
+      type: 'SELECT_ALL',
+      ids: filteredResources.map(r => r.id)
+    })
+  }
+
+  // === RENDER ===
+
+  return (
+    <div className="max-w-7xl mx-auto p-6">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          ✅ Validation des Ressources
+        </h1>
+        <p className="text-gray-600">
+          {state.step === 'overview' 
+            ? 'Choisissez un groupe de ressources à examiner'
+            : 'Examinez et validez les ressources sélectionnées'
+          }
+        </p>
+      </div>
+
+      {/* États : Loading / Error */}
+      {(isLoading || statsLoading) && <LoadingSpinner />}
+
+      {error && (
+        <ErrorMessage
+          error={error}
+          onRetry={() => refetch()}
+        />
+      )}
+
+      {/* Contenu : Vue Synthèse OU Liste Revue */}
+      {state.step === 'overview' && stats && (
+        <ValidationOverview
+          stats={stats}
+          onSelectCountry={(code) => dispatch({ type: 'SELECT_COUNTRY', country: code })}
+          onSelectCategory={(cat) => dispatch({ type: 'SELECT_CATEGORY', category: cat })}
+          onShowAll={() => dispatch({ type: 'SHOW_ALL' })}
+        />
+      )}
+
+      {state.step === 'review' && resources && (
+        <ResourceReviewList
+          resources={filteredResources}
+          selectedIds={state.selectedIds}
+          onToggleSelection={(id) => dispatch({ type: 'TOGGLE_SELECTION', id })}
+          onSelectAll={handleSelectAll}
+          onApprove={handleApprove}
+          onReject={handleReject}
+          onApproveAll={handleApproveAll}
+          onRejectAll={handleRejectAll}
+          isProcessing={validateBatch.isPending}
+          onBack={() => dispatch({ type: 'BACK_TO_OVERVIEW' })}
+        />
+      )}
+    </div>
+  )
+}
+```
+
+**📖 Explications Approfondies** :
+
+**useMemo pour le filtrage**
+```tsx
+const filteredResources = useMemo(() => {
+  // Logique de filtrage
+}, [resources, state.filter])
+```
+- Recalcule seulement si `resources` ou `state.filter` changent
+- Évite filtrage inutile à chaque render
+- Performance optimisée pour grandes listes
+
+**Callback onSuccess dans mutation**
+```tsx
+validateBatch.mutate({...}, {
+  onSuccess: () => {
+    dispatch({ type: 'BACK_TO_OVERVIEW' })
+  }
+})
+```
+- `useMutation` accepte un 2ème argument : options spécifiques à cet appel
+- Retour automatique à la synthèse après validation réussie
+
+**Render conditionnel par step**
+```tsx
+{state.step === 'overview' && <ValidationOverview />}
+{state.step === 'review' && <ResourceReviewList />}
+```
+- Deux composants différents selon l'étape
+- Pattern multi-step classique
+
+---
+
+### 🛠️ Étape 5.7 - Actions Inline dans ResourcesPage (🆕)
+
+**Fichier** : `src/pages/ResourcesPage.tsx`
+
+Ajout d'actions rapides dans la page consultation.
+
+```tsx
+// src/pages/ResourcesPage.tsx
+
+import { useResources } from '../hooks/useResources'
+import { useValidateBatch } from '../hooks/useValidateBatch'
+import { ResourceRow } from '../components/features/ResourceRow'
+
+export function ResourcesPage() {
+  const { data: resources, isLoading } = useResources()
+  const validateBatch = useValidateBatch()
+
+  const handleQuickValidate = (id: string) => {
+    validateBatch.mutate({
+      source_ids: [id],
+      action: 'approve'
+    })
+  }
+
+  const handleQuickReject = (id: string) => {
+    validateBatch.mutate({
+      source_ids: [id],
+      action: 'reject'
+    })
+  }
+
+  return (
+    <div className="max-w-7xl mx-auto p-6">
+      <h1 className="text-3xl font-bold mb-6">📋 Ressources</h1>
+
+      <table className="w-full">
+        <thead>
+          <tr>
+            <th>Nom</th>
+            <th>Pays</th>
+            <th>Catégorie</th>
+            <th>Statut</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {resources?.map(resource => (
+            <ResourceRow
+              key={resource.id}
+              resource={resource}
+              onValidate={() => handleQuickValidate(resource.id)}
+              onReject={() => handleQuickReject(resource.id)}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+```
+
+**Composant ResourceRow** :
+```tsx
+// src/components/features/ResourceRow.tsx
+
+import type { DiscoveredResource } from '../../services/api'
+
+interface ResourceRowProps {
+  resource: DiscoveredResource
+  onValidate: () => void
+  onReject: () => void
+}
+
+export function ResourceRow({ resource, onValidate, onReject }: ResourceRowProps) {
+  return (
+    <tr className="border-b hover:bg-gray-50">
+      <td className="p-4">{resource.name}</td>
+      <td className="p-4">{resource.country}</td>
+      <td className="p-4">{resource.category}</td>
+      <td className="p-4">
+        <span className={`px-2 py-1 rounded text-xs ${getStatusColor(resource.status)}`}>
+          {resource.status}
+        </span>
+      </td>
+      <td className="p-4">
+        {resource.status === 'discovered' && (
+          <div className="flex gap-2">
+            <button
+              onClick={onValidate}
+              className="p-1 hover:bg-green-100 rounded"
+              title="Valider"
+            >
+              ✓
+            </button>
+            <button
+              onClick={onReject}
+              className="p-1 hover:bg-red-100 rounded"
+              title="Rejeter"
+            >
+              ✗
+            </button>
+          </div>
+        )}
+      </td>
+    </tr>
+  )
+}
+
+function getStatusColor(status: string) {
+  switch (status) {
+    case 'discovered': return 'bg-yellow-100 text-yellow-800'
+    case 'geo_validated': return 'bg-green-100 text-green-800'
+    case 'deleted': return 'bg-red-100 text-red-800'
+    default: return 'bg-gray-100 text-gray-800'
+  }
+}
+```
+
+---
+
+### 🛠️ Étape 5.8 - Intégration dans App.tsx
   
   // 🔄 Hook de validation
   const validateBatch = useValidateBatch()
@@ -8043,7 +8893,7 @@ const handleApproveAll = () => {
 
 ---
 
-### 🛠️ Étape 5.7 - Intégration dans App.tsx
+### 🛠️ Étape 5.9 - Intégration dans App.tsx
 
 Ajouter la route pour la page Validation.
 
@@ -8078,7 +8928,7 @@ export default App
 
 ---
 
-### 🛠️ Étape 5.8 - Ajouter le Toast Provider
+### 🛠️ Étape 5.10 - Ajouter le Toast Provider
 
 **Fichier** : `src/main.tsx`
 
@@ -8154,7 +9004,7 @@ createRoot(document.getElementById('root')!).render(
 
 ---
 
-### 🛠️ Étape 5.9 - Ajouter le Lien dans Sidebar
+### 🛠️ Étape 5.11 - Ajouter le Lien dans Sidebar
 
 **Fichier** : `src/components/layout/Sidebar.tsx`
 
@@ -8367,68 +9217,119 @@ User clique → Spinner pendant 300ms → API call → Carte disparaît
 
 ---
 
-### 🎨 Schéma Architecture Complète de l'Étape 5
+### 🎨 Schéma Architecture Complète de l'Étape 5 (UX Multi-Step)
 
 ```mermaid
 graph TB
     subgraph Pages["📄 Pages"]
-        VP["ValidationPage<br/><small>Orchestration</small>"]
+        VP["ValidationPage<br/><small>Workflow Multi-Step</small>"]
+        RP["ResourcesPage<br/><small>Consultation + Actions Inline</small>"]
     end
     
     subgraph Hooks["🎣 Hooks"]
         HRBS["useResourcesByStatus<br/><small>Fetch discovered</small>"]
+        HRS["useResourceStats 🆕<br/><small>Fetch stats groupées</small>"]
+        HVW["useValidationWorkflow 🆕<br/><small>useReducer Multi-Step</small>"]
         HVB["useValidateBatch<br/><small>Mutation</small>"]
     end
     
-    subgraph Components["🧩 Composants"]
+    subgraph ComponentsFeatures["🧩 Composants Features"]
+        VO["ValidationOverview 🆕<br/><small>Vue Synthèse</small>"]
+        RRL["ResourceReviewList 🆕<br/><small>Liste Filtrée</small>"]
         RVC["ResourceValidationCard<br/><small>Carte ressource</small>"]
         VBA["ValidationBatchActions<br/><small>Actions masse</small>"]
+        RR["ResourceRow 🆕<br/><small>Actions Inline</small>"]
+    end
+    
+    subgraph ComponentsUI["🎨 Composants UI"]
+        SC["StatCard 🆕<br/><small>Carte Statistique</small>"]
+        TOAST["Toaster<br/><small>React Hot Toast</small>"]
     end
     
     subgraph Services["⚙️ Services"]
-        API["api.ts<br/><small>validateBatch()</small>"]
+        API["api.ts<br/><small>validateBatch()<br/>getResourceStats() 🆕</small>"]
     end
     
     subgraph Backend["🔌 Backend API"]
-        ROUTE["/geographic/validate-batch<br/><small>POST</small>"]
-        DB[("🗄️ Database<br/>Supabase")]
+        ROUTE1["/geographic/validate-batch<br/><small>POST</small>"]
+        ROUTE2["/resources/stats 🆕<br/><small>GET</small>"]
+        DB[("🗄️ Database")]
     end
     
     subgraph State["💾 State Management"]
         QC["QueryClient<br/><small>Cache TanStack Query</small>"]
-        LS["useState<br/><small>selectedIds</small>"]
+        RED["Reducer 🆕<br/><small>step|filter|selectedIds</small>"]
     end
     
-    subgraph UI["🎭 UI Feedback"]
-        TOAST["React Hot Toast<br/><small>Notifications</small>"]
-    end
+    %% Workflow ValidationPage
+    VP -->|"1. Fetch stats"| HRS
+    VP -->|"2. Fetch resources"| HRBS
+    VP -->|"3. Gère workflow"| HVW
+    VP -->|"4. Mutations"| HVB
     
-    VP -->|"utilise"| HRBS
-    VP -->|"utilise"| HVB
-    VP -->|"rend"| RVC
-    VP -->|"rend"| VBA
-    VP -->|"gère"| LS
+    VP -->|"step=overview"| VO
+    VP -->|"step=review"| RRL
     
-    HRBS -->|"lit"| QC
+    VO -->|"contient"| SC
+    SC -->|"onClick pays/cat"| VP
+    
+    RRL -->|"contient"| VBA
+    RRL -->|"contient"| RVC
+    
+    %% Workflow ResourcesPage
+    RP -->|"Fetch all"| HRBS
+    RP -->|"rend"| RR
+    RR -->|"quick validate/reject"| HVB
+    
+    %% Hooks → Services
+    HRBS -->|"lit cache"| QC
     HRBS -->|"appelle"| API
     
-    HVB -->|"écrit"| QC
+    HRS -->|"lit cache"| QC
+    HRS -->|"appelle"| API
+    
+    HVB -->|"invalide cache"| QC
     HVB -->|"appelle"| API
-    HVB -->|"affiche"| TOAST
+    HVB -->|"affiche toast"| TOAST
     
-    RVC -->|"onClick"| VP
-    VBA -->|"onApproveAll/Reject"| VP
+    HVW -->|"gère état"| RED
     
-    API -->|"POST"| ROUTE
-    ROUTE -->|"UPDATE"| DB
+    %% API → Backend
+    API -->|"POST"| ROUTE1
+    API -->|"GET"| ROUTE2
+    ROUTE1 -->|"UPDATE"| DB
+    ROUTE2 -->|"SELECT GROUP BY"| DB
     
     style Pages fill:#e1bee7
     style Hooks fill:#ffccbc
-    style Components fill:#c5e1a5
+    style ComponentsFeatures fill:#c5e1a5
+    style ComponentsUI fill:#b3e5fc
     style Services fill:#fff9c4
     style Backend fill:#b2dfdb
     style State fill:#ffeb3b
-    style UI fill:#f8bbd0
+```
+
+**📖 Légende du diagramme** :
+
+**Flux Validation par Groupe (Menu Validation)** :
+1. **Overview** : ValidationPage → useResourceStats → Stats groupées affichées dans ValidationOverview
+2. **Filtrage** : User clique StatCard (pays/cat) → useValidationWorkflow dispatch SELECT_COUNTRY
+3. **Review** : ValidationPage passe en step='review' → Affiche ResourceReviewList avec ressources filtrées
+4. **Actions** : User valide lot → useValidateBatch mutation → Cache invalidé → Retour overview
+
+**Flux Actions Inline (Menu Ressources)** :
+1. **Consultation** : ResourcesPage → useResourcesByStatus('discovered')
+2. **Action rapide** : User clique ✓ dans ResourceRow → useValidateBatch mutation immédiate
+3. **Synchronisation** : Cache invalidé automatiquement → Liste se met à jour
+
+**État Multi-Step (useReducer)** :
+```typescript
+{
+  step: 'overview' | 'review',
+  filter: { country?: string, category?: string },
+  selectedIds: string[],
+  groupBy: 'country' | 'category' | 'all'
+}
 ```
 
 ---
@@ -8442,22 +9343,44 @@ Avant de considérer cette étape terminée, vérifie que :
 
 **Service API** :
 - [ ] Tu as ajouté `validateBatch()` dans `services/api.ts`
-- [ ] Tu as défini les interfaces `ValidationRequest` et `ValidationResponse`
+- [ ] Tu as ajouté `getResourceStats()` dans `services/api.ts` (🆕)
+- [ ] Tu as défini les interfaces `ValidationRequest`, `ValidationResponse`, `ResourceStats` (🆕)
 
 **Hooks** :
 - [ ] Tu as créé `useResourcesByStatus.ts`
+- [ ] Tu as créé `useResourceStats.ts` (🆕 pour stats groupées)
 - [ ] Tu as créé `useValidateBatch.ts` avec callbacks `onSuccess` et `onError`
+- [ ] Tu as créé `useValidationWorkflow.ts` avec `useReducer` (🆕 workflow multi-step)
 - [ ] Tu comprends comment `invalidateQueries()` synchronise le cache
 
-**Composants** :
-- [ ] Tu as créé `ResourceValidationCard.tsx` avec boutons Garder/Rejeter
-- [ ] Tu as créé `ValidationBatchActions.tsx` pour actions en masse
+**Composants UI** :
+- [ ] Tu as créé `StatCard.tsx` (🆕 cartes cliquables pour stats)
 - [ ] Tu as ajouté `<Toaster />` dans `main.tsx`
 
-**Page** :
-- [ ] Tu as créé `ValidationPage.tsx`
+**Composants Features** :
+- [ ] Tu as créé `ResourceValidationCard.tsx` avec boutons Garder/Rejeter
+- [ ] Tu as créé `ValidationBatchActions.tsx` pour actions en masse
+- [ ] Tu as créé `ValidationOverview.tsx` (🆕 vue synthèse)
+- [ ] Tu as créé `ResourceReviewList.tsx` (🆕 liste avec filtrage)
+- [ ] Tu as créé `ResourceRow.tsx` (🆕 actions inline)
+
+**Pages** :
+- [ ] Tu as créé `ValidationPage.tsx` avec workflow multi-step (🆕 refactored)
+- [ ] Tu as modifié `ResourcesPage.tsx` pour ajouter actions inline (🆕)
 - [ ] Tu as ajouté la route `/validation` dans `App.tsx`
-- [ ] Tu as ajouté le lien dans `Sidebar.tsx`
+- [ ] Tu as ajouté la route `/resources` dans `App.tsx` (🆕)
+- [ ] Tu as ajouté les liens dans `Sidebar.tsx`
+
+**Backend Requis** :
+- [ ] Endpoint `POST /geographic/validate-batch` fonctionne
+- [ ] Endpoint `GET /resources/stats` implémenté (🆕)
+  ```json
+  {
+    "total_pending": 75,
+    "by_country": { "FR": { "count": 25, "label": "France" } },
+    "by_category": { "procedure_plateforme": 9 }
+  }
+  ```
 
 **Concepts React Compris** :
 - [ ] Tu comprends `useMutation` avec callbacks
@@ -8465,20 +9388,43 @@ Avant de considérer cette étape terminée, vérifie que :
 - [ ] Tu comprends les **toasts** pour feedback utilisateur
 - [ ] Tu sais gérer la **sélection multiple** avec `useState<string[]>`
 - [ ] Tu comprends le **toggle pattern** pour checkbox
+- [ ] Tu maîtrises `useReducer` pour état complexe (🆕)
+- [ ] Tu comprends le **workflow multi-step** (overview → review) (🆕)
+- [ ] Tu sais utiliser `useMemo` pour optimiser le filtrage (🆕)
 
-**Tests** :
-- [ ] Tu peux voir la liste des ressources `discovered`
-- [ ] Le clic sur "Garder" valide la ressource et la retire de la liste
-- [ ] Le clic sur "Rejeter" supprime la ressource de la liste
+**Tests Workflow Validation par Groupe** :
+- [ ] Page Validation affiche la vue synthèse au chargement
+- [ ] Clic sur carte pays (ex: France [25]) filtre et affiche les 25 ressources
+- [ ] Bouton "Retour à la synthèse" ramène à la vue overview
+- [ ] Sélection multiple fonctionne avec checkbox
+- [ ] "Tout sélectionner" / "Tout désélectionner" fonctionnent
+- [ ] Validation batch met à jour les stats et retourne à l'overview
+- [ ] Stats se rafraîchissent automatiquement après validation
+
+**Tests Actions Inline** :
+- [ ] Page Ressources affiche toutes les ressources
+- [ ] Icône ✓ valide instantanément une ressource `discovered`
+- [ ] Icône ✗ rejette instantanément une ressource `discovered`
+- [ ] Toast de confirmation s'affiche
+- [ ] Actions inline ne sont visibles que pour `status=discovered`
+
+**Tests Généraux** :
 - [ ] Les toasts s'affichent lors des actions
-- [ ] Les statistiques se mettent à jour automatiquement
-- [ ] Les actions batch fonctionnent (Tout Valider / Tout Rejeter)
-- [ ] La sélection multiple fonctionne avec les checkbox
+- [ ] Le cache TanStack Query se synchronise automatiquement
+- [ ] Loading states affichés pendant fetch
+- [ ] Error states gérés avec message + bouton retry
 
 **Optionnel Avancé** :
 - [ ] Tu as implémenté les **optimistic updates** (UI instantanée)
-- [ ] Tu as ajouté un **filtre** (Tous / Nouveaux / Doublons)
-- [ ] Tu as ajouté la **pagination** si beaucoup de ressources
+- [ ] Tu as ajouté un **filtre additionnel** (score de confiance, is_new, etc.)
+- [ ] Tu as ajouté la **pagination** pour grandes listes
+- [ ] Tu as ajouté un **search bar** dans ResourceReviewList
+
+**Architecture UX Validée** :
+- [x] Menu Validation = workflow principal avec vue stratégique
+- [x] Menu Ressources = consultation + actions rapides inline
+- [x] Pattern professionnel (Linear, Notion, Airtable) implémenté
+- [x] Scalable pour 10 plateformes × 5 langues × N pays
 
 ---
 
