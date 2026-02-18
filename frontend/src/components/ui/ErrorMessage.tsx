@@ -1,4 +1,5 @@
 import { Button } from "./Button"
+
 interface ErrorMessageProps {
     error: Error | unknown
     onRetry?: () => void

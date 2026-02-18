@@ -144,10 +144,14 @@ class LegacyAPIAdapter:
                 }
             
             # 🎯 FUSION: Obtenir allocation ressources selon priorité de la catégorie
+            # ✅ FIX: Respecter le max_per_category du frontend (ne pas le surcharger avec allocation)
             allocation = self.workflow_manager.priority_discovery_service.get_resource_allocation(category) if self.workflow_manager.priority_discovery_service else {"max_resources": max_per_category, "retry_attempts": 1, "rate_limit_delay": 5.0}
             
+            # ✅ TOUJOURS utiliser le paramètre frontend (c'est l'utilisateur qui décide !)
+            max_resources = max_per_category
+            
             logger.info(f"🎯 Découverte {category} (Priority: {allocation.get('priority', 'N/A')})")
-            logger.info(f"   Max ressources: {allocation['max_resources']}, Retry: {allocation['retry_attempts']}")
+            logger.info(f"   Max ressources: {max_resources} (frontend override), Retry: {allocation['retry_attempts']}")
             
             # ✅ PHASE 1.5: En mémoire list pour capturer les ressources AVANT status change
             newly_discovered = []  # ✅ Garder trace des découvertes dans cette requête
@@ -155,9 +159,12 @@ class LegacyAPIAdapter:
             
             # Configuration pays (utiliser la liste de pays reçue du frontend, ou tous les pays si empty)
             if countries and len(countries) > 0:
-                max_countries = len(countries)
+                # ✅ FIX: Quand des pays spécifiques sont demandés, récupérer TOUS les pays de la langue
+                # Puis filtrer après. Sinon on risque de ne pas avoir le pays demandé.
+                max_countries = 10  # Récupérer beaucoup de pays pour être sûr d'avoir ceux demandés
                 try:
-                    logger.info(f"Recherche dans {len(countries)} pays spécifiques: {countries}")
+                    logger.info(f"🔍 Recherche dans {len(countries)} pays spécifiques: {countries}")
+                    logger.info(f"   → Récupération de {max_countries} pays {language} pour filtrage")
                 except UnicodeEncodeError:
                     logger.info(f"Recherche dans {len(countries)} pays spécifiques (encoding UTF-8)")
             else:
@@ -166,47 +173,136 @@ class LegacyAPIAdapter:
             
             countries_config = await self._get_countries_config_dynamic(language, max_countries)
             
+            # � CRITIQUE: Afficher countries_config brut
+            print(f"\n🚨 COUNTRIES_CONFIG REÇU: {countries_config}\n")
+            logger.info(f"🚨 COUNTRIES_CONFIG: length={len(countries_config)}, content={countries_config}")
+            
+            # 🐛 DEBUG: Log countries_config AVANT filtrage
+            try:
+                logger.info(f"📋 Countries config AVANT filtrage: {[c['name'] + ' (' + c['code'] + ')' for c in countries_config]}")
+            except Exception as ex:
+                logger.error(f"❌ Erreur format countries_config: {ex}")
+                logger.info(f"📋 Countries config AVANT filtrage: {len(countries_config)} pays")
+            
             # ✅ FIX BUG: Filtrer countries_config selon les pays sélectionnés du frontend
             if countries and len(countries) > 0:
-                # Mapper les noms du frontend (UK, USA) vers les noms du backend (United Kingdom, United States)
+                print(f"\n=== DEBUT FILTRAGE ===")
+                print(f"Countries demandés: {countries}")
+                
+                # ✅ SOLUTION UNIVERSELLE: Convertir tous les noms en CODES (ES, FR, MX, etc.)
                 country_mapping = self._get_country_name_mapping(language)
-                mapped_countries = [country_mapping.get(c, c) for c in countries]
                 
-                # ✅ ALSO accept country codes directly (ES, FR, IT, etc. from frontend)
-                # Si le pays est un code (2 lettres), le garder comme code
-                country_codes = [c if len(c) == 2 and c.isupper() else None for c in countries]
-                country_codes = [c for c in country_codes if c]  # Remove None values
+                # Convertir les noms demandés en codes
+                requested_codes = set()
+                for country_name in countries:
+                    # Si c'est déjà un code (2 lettres majuscules), le garder tel quel
+                    if len(country_name) == 2 and country_name.isupper():
+                        requested_codes.add(country_name)
+                    # Sinon chercher dans le mapping
+                    elif country_name in country_mapping:
+                        requested_codes.add(country_mapping[country_name])
+                    else:
+                        # Fallback : essayer de trouver le code dans countries_config
+                        # Certains noms peuvent être identiques (France = France)
+                        requested_codes.add(country_name)
                 
-                # Filtrer countries_config pour ne garder que les pays demandés
-                countries_config = [
-                    c for c in countries_config 
-                    if c["name"] in mapped_countries or c["code"] in countries or c["code"] in mapped_countries or c["code"] in country_codes
-                ]
+                print(f"Codes demandés (après mapping): {requested_codes}")
+                logger.info(f"🔍 DEBUG: countries={countries} → codes={requested_codes}")
+                
+                # Filtrer countries_config par CODE uniquement
+                filtered_countries = []
+                print(f"\n=== BOUCLE FILTRAGE ({len(countries_config)} pays à vérifier) ===")
+                
+                for country_config in countries_config:
+                    country_name = country_config["name"]
+                    country_code = country_config["code"]
+                    
+                    print(f"Vérification: {country_name} (code={country_code})")
+                    
+                    # ✅ MATCH PAR CODE UNIQUEMENT (universel !)
+                    if country_code in requested_codes:
+                        filtered_countries.append(country_config)
+                        print(f"  ✅ Match CODE: {country_code}")
+                        logger.info(f"✅ Match trouvé: {country_name} ({country_code})")
+                    # Fallback : match par nom exact (au cas où)
+                    elif country_name in countries:
+                        filtered_countries.append(country_config)
+                        print(f"  ✅ Match NOM: {country_name}")
+                        logger.info(f"✅ Match trouvé (nom): {country_name} ({country_code})")
+                    else:
+                        print(f"  ❌ Pas de match")
+                
+                print(f"\n=== FIN FILTRAGE: {len(filtered_countries)} pays retenus ===\n")
+                countries_config = filtered_countries
                 
                 try:
                     filtered_names = [c['name'] for c in countries_config]
-                    logger.info(f"✅ Pays filtrés: {filtered_names} (demandés: {countries})")
+                    print(f"✅ Pays filtrés FINAL: {filtered_names}")
+                    logger.info(f"✅ Pays filtrés FINAL: {filtered_names} (demandés: {countries})")
                 except UnicodeEncodeError:
-                    logger.info(f"✅ Pays filtrés: {len(countries_config)} pays (encoding UTF-8)")
+                    print(f"✅ Pays filtrés FINAL: {len(countries_config)} pays")
+                    logger.info(f"✅ Pays filtrés FINAL: {len(countries_config)} pays (encoding UTF-8)")
+                
+                # 🐛 DEBUG: Si aucun pays après filtrage, c'est le BUG !
+                if len(countries_config) == 0:
+                    print(f"❌ ERREUR: Aucun pays après filtrage !")
+                    logger.error(f"❌ ERREUR: Aucun pays après filtrage ! countries={countries}, mapped={mapped_countries}")
+            
+            print(f"\n=== DEBUT TRAITEMENT: {len(countries_config)} pays à traiter ===\n")
+            print(f"🎯 Objectif: {max_resources} ressources à découvrir\n")
+            print(f"📊 Variables: discovered_count={discovered_count}, max_resources={max_resources}\n")
             
             for country_idx, country in enumerate(countries_config):
-                for term_idx, search_term in enumerate(country.get("search_terms", [])[:1]):  # 1 seul terme par pays pour éviter rate limiting
+                print(f"🔄 Boucle pays {country_idx + 1}/{len(countries_config)}: {country['name']}")
+                
+                # ✅ FIX: Répéter l'appel LLM jusqu'à atteindre max_resources
+                # Au lieu de limiter à 1 terme, on boucle jusqu'à avoir assez de ressources
+                search_terms = country.get("search_terms", ["cyberharcèlement"])
+                search_term = search_terms[0] if search_terms else "cyberharcèlement"
+                
+                print(f"🔍 Search term utilisé: {search_term}")
+                
+                # ✅ Garder trace des organisations déjà trouvées pour diversifier les prompts
+                found_organizations = []
+                
+                # Boucler jusqu'à atteindre max_resources
+                attempts = 0
+                consecutive_duplicates = 0  # Compteur de doublons consécutifs
+                max_consecutive_duplicates = 3  # Arrêter après 3 doublons d'affilée
+                max_attempts_per_country = max_resources * 3  # Maximum 3 tentatives par ressource demandée
+                
+                print(f"🚀 Entrer dans la boucle while: discovered_count={discovered_count} < max_resources={max_resources}")
+                print(f"   attempts={attempts} < max_attempts_per_country={max_attempts_per_country}")
+                print(f"   consecutive_duplicates={consecutive_duplicates} < max_consecutive_duplicates={max_consecutive_duplicates}")
+                
+                while discovered_count < max_resources and attempts < max_attempts_per_country and consecutive_duplicates < max_consecutive_duplicates:
                     try:
-                        # ✅ DEBUG: Log pour chaque pays traité
-                        logger.info(f"🌍 Traitement pays {country_idx + 1}/{len(countries_config)}: {country['name']} ({country['code']}) - Terme: {search_term}")
+                        attempts += 1
+                        
+                        # ✅ DEBUG: Log pour chaque tentative
+                        print(f"🌍 Traitement pays {country_idx + 1}/{len(countries_config)}: {country['name']} ({country['code']}) - Tentative {attempts}/{max_attempts_per_country} (total: {discovered_count}/{max_resources})")
+                        logger.info(f"🌍 Traitement pays {country_idx + 1}/{len(countries_config)}: {country['name']} ({country['code']}) - Tentative {attempts}")
                         
                         # Délai pour éviter rate limiting (surtout après la première requête)
-                        if country_idx > 0 or term_idx > 0:
-                            await asyncio.sleep(5.0)  # Réduit de 10s à 5s - parser amélioré
+                        if country_idx > 0 or attempts > 1:
+                            await asyncio.sleep(5.0)  # 5s entre chaque appel LLM
                         
-                        # ✅ PHASE 2: Générer avec LLM en passant la category pour filtrer mieux
-                        prompt = self._generate_discovery_prompt(country["name"], language, search_term, category)
+                        # ✅ PHASE 2: Générer avec LLM en passant la category ET les orgs déjà trouvées
+                        prompt = self._generate_discovery_prompt(country["name"], language, search_term, category, exclude_orgs=found_organizations)
+                        
+                        # ✅ DEBUG: Afficher le prompt pour vérifier l'exclusion
+                        print(f"\n📝 PROMPT envoyé au LLM (tentative {attempts}):")
+                        print(f"   Organisations à exclure: {found_organizations}")
+                        print(f"   Prompt (200 premiers chars): {prompt[:200]}...")
+                        
                         response = self.llm_manager.generate(prompt)
                         
                         # ✅ DEBUG: Log la réponse du LLM
                         if response.success:
+                            print(f"📨 LLM Response (200 premiers chars): {response.content[:200]}...")
                             logger.info(f"📝 LLM Response ({country['code']}): {response.content[:200]}...")
                         else:
+                            print(f"❌ LLM Error: {response.error if hasattr(response, 'error') else 'Unknown'}")
                             logger.warning(f"❌ LLM Error ({country['code']}): {response.error if hasattr(response, 'error') else 'Unknown'}")
                         
                         if response.success:
@@ -214,7 +310,20 @@ class LegacyAPIAdapter:
                             resource_data = self._parse_llm_response(response.content, country, language)
                             
                             if resource_data:
-                                resource_id = f"DISCOVERED_{country['code']}_{discovered_count + 1}"
+                                # ✅ FIX: ID unique avec timestamp pour éviter collisions multi-catégories
+                                import time
+                                timestamp_ms = int(time.time() * 1000) % 100000  # 5 derniers chiffres du timestamp
+                                resource_id = f"DISCOVERED_{country['code']}_{category.upper()}_{timestamp_ms}"
+                                
+                                # ✅ DEBUG: Afficher le nom parsé
+                                parsed_name = resource_data.get("name", "UNKNOWN")
+                                print(f"🔍 Ressource parsée: {parsed_name}")
+                                
+                                # ✅ FIX CRITIQUE: Ajouter à found_organizations AVANT le check doublon
+                                # Sinon la liste reste vide si tout est doublon !
+                                if parsed_name and parsed_name != "UNKNOWN":
+                                    found_organizations.append(parsed_name)
+                                    print(f"📝 Ajouté à la liste d'exclusion: {parsed_name}")
                                 
                                 # 🎯 FUSION: Vérifier si c'est un doublon AVANT d'ajouter
                                 is_duplicate = False
@@ -235,7 +344,7 @@ class LegacyAPIAdapter:
                                     # ✅ PHASE 1.5: Capturer AVANT que la validation ne change le status
                                     newly_discovered.append({
                                         "id": resource_id,
-                                        "name": resource_data.get("name", ""),
+                                        "name": parsed_name,
                                         "country": resource_data.get("country", ""),
                                         "url": resource_data.get("website", ""),  # ✅ FIX: Inclure l'URL
                                         "phone": resource_data.get("phone", ""),
@@ -250,6 +359,8 @@ class LegacyAPIAdapter:
                                     self.validation_system.start_geographic_validation(resource_id)
                                     
                                     discovered_count += 1
+                                    consecutive_duplicates = 0  # ✅ Reset compteur si nouvelle ressource trouvée
+                                    print(f"✅ Nouvelle ressource ajoutée ! Total: {discovered_count}/{max_resources}")
                                     
                                     # 🎯 FUSION: Marquer découverte complète pour cette catégorie
                                     if self.workflow_manager.priority_discovery_service:
@@ -257,7 +368,11 @@ class LegacyAPIAdapter:
                                             country['code'], category, resources_found=1
                                         )
                                 else:
-                                    # Ressource est un doublon - l'ajouter à la liste mais marquée comme doublon
+                                    # Ressource est un doublon
+                                    consecutive_duplicates += 1
+                                    print(f"⚠️ Doublon détecté ({consecutive_duplicates}/{max_consecutive_duplicates}) - Raison: {duplicate_action}")
+                                    
+                                    # Ajouter quand même à la liste pour information
                                     newly_discovered.append({
                                         "id": resource_id,
                                         "name": resource_data.get("name", ""),
@@ -270,6 +385,12 @@ class LegacyAPIAdapter:
                                         "is_new": False,
                                         "duplicate_reason": str(duplicate_action) if duplicate_action else "unknown"
                                     })
+                                    
+                                    # ✅ Arrêter si trop de doublons consécutifs
+                                    if consecutive_duplicates >= max_consecutive_duplicates:
+                                        print(f"🛑 Arrêt: {consecutive_duplicates} doublons consécutifs, probablement plus de nouvelles ressources")
+                                        logger.info(f"🛑 Arrêt après {consecutive_duplicates} doublons consécutifs pour {country['name']}")
+                                        break
                     
                     except Exception as e:
                         logger.error(f"Erreur découverte {country['name']}: {e}")
@@ -997,89 +1118,154 @@ class LegacyAPIAdapter:
     
     def _get_country_name_mapping(self, language: str) -> Dict[str, str]:
         """
-        ✅ FIX BUG: Mappe les noms courts du frontend vers les noms complets du backend
+        ✅ SOLUTION UNIVERSELLE: Mappe TOUS les noms de pays vers leur CODE universel (ES, FR, MX, etc.)
+        
+        Cette fonction retourne un mapping : Nom du pays → Code ISO (2 lettres)
+        Le code est ensuite utilisé pour filtrer les countries_config retournés par l'API dynamique.
         
         Exemple:
-        - Frontend: "UK" → Backend: "United Kingdom"
-        - Frontend: "USA" → Backend: "United States"
-        - Frontend: "Australia" → Backend: "Australia" (déjà correct)
+        - Frontend FR: "France" → Code "FR"
+        - Frontend ES: "España" → Code "ES"  
+        - Frontend EN: "United Kingdom" → Code "GB"
+        - Backend API dynamique retourne: {"name": "Spain", "code": "ES"}
+        - Match par code: "ES" === "ES" ✅
         """
         mappings = {
             "FR": {
-                "France": "France",
-                "Belgique": "Belgique",
-                "Suisse": "Suisse",
-                "Canada": "Canada",
-                "Luxembourg": "Luxembourg"
+                # Pays francophones
+                "France": "FR",
+                "Belgique": "BE",
+                "Suisse": "CH",
+                "Canada": "CA",
+                "Luxembourg": "LU",
+                "Sénégal": "SN",
+                "Côte d'Ivoire": "CI",
+                "Mali": "ML",
+                "Niger": "NE",
+                "Burkina Faso": "BF",
+                "Guinée": "GN",
+                "Bénin": "BJ",
+                "Togo": "TG",
+                "République Démocratique du Congo": "CD",
+                "Congo": "CG",
+                "Gabon": "GA",
+                "Cameroun": "CM",
+                "Madagascar": "MG",
+                "Haïti": "HT",
+                "Rwanda": "RW",
+                "Burundi": "BI",
+                "Djibouti": "DJ",
+                "Comores": "KM",
+                "Seychelles": "SC",
+                "Monaco": "MC",
             },
             "EN": {
-                "UK": "United Kingdom",
-                "GB": "United Kingdom",
-                "United Kingdom": "United Kingdom",
-                "USA": "United States",
-                "US": "United States",
-                "United States": "United States",
-                "Canada": "Canada",
-                "Australia": "Australia",
-                "AU": "Australia",
-                "Ireland": "Ireland",
-                "IE": "Ireland",
-                "New Zealand": "New Zealand",
-                "NZ": "New Zealand"
+                # Pays anglophones + variations
+                "United Kingdom": "GB",
+                "UK": "GB",
+                "Great Britain": "GB",
+                "United States": "US",
+                "USA": "US",
+                "US": "US",
+                "America": "US",
+                "Canada": "CA",
+                "Australia": "AU",
+                "Ireland": "IE",
+                "New Zealand": "NZ",
+                "South Africa": "ZA",
+                "India": "IN",
+                "Pakistan": "PK",
+                "Nigeria": "NG",
+                "Ghana": "GH",
+                "Kenya": "KE",
+                "Uganda": "UG",
+                "Tanzania": "TZ",
+                "Zimbabwe": "ZW",
+                "Jamaica": "JM",
+                "Trinidad and Tobago": "TT",
+                "Bahamas": "BS",
+                "Barbados": "BB",
+                "Singapore": "SG",
+                "Philippines": "PH",
+                "Malta": "MT",
             },
             "ES": {
-                "España": "España",
-                "ES": "España",
-                "México": "México",
-                "MX": "México",
-                "Argentina": "Argentina",
-                "AR": "Argentina",
-                "Colombia": "Colombia",
-                "CO": "Colombia",
-                "Perú": "Perú",
-                "PE": "Perú"
+                # Pays hispanophones
+                "España": "ES",
+                "Spain": "ES",
+                "México": "MX",
+                "Mexico": "MX",
+                "Argentina": "AR",
+                "Colombia": "CO",
+                "Perú": "PE",
+                "Peru": "PE",
+                "Venezuela": "VE",
+                "Chile": "CL",
+                "Ecuador": "EC",
+                "Guatemala": "GT",
+                "Cuba": "CU",
+                "Bolivia": "BO",
+                "República Dominicana": "DO",
+                "Honduras": "HN",
+                "Paraguay": "PY",
+                "El Salvador": "SV",
+                "Nicaragua": "NI",
+                "Costa Rica": "CR",
+                "Panamá": "PA",
+                "Panama": "PA",
+                "Uruguay": "UY",
+                "Puerto Rico": "PR",
+                "Guinea Ecuatorial": "GQ",
             },
             "IT": {
-                "Italia": "Italia",
-                "IT": "Italia",
-                "Svizzera": "Svizzera",
-                "CH": "Svizzera",
-                "San Marino": "San Marino",
-                "SM": "San Marino",
-                "Malta": "Malta",
-                "MT": "Malta",
-                "Vaticano": "Vaticano",
-                "VA": "Vaticano"
+                # Pays italophones
+                "Italia": "IT",
+                "Italy": "IT",
+                "Svizzera": "CH",
+                "Switzerland": "CH",
+                "San Marino": "SM",
+                "Vaticano": "VA",
+                "Vatican": "VA",
+                "Malta": "MT",
             },
             "DE": {
-                "Deutschland": "Deutschland",
-                "DE": "Deutschland",
-                "Österreich": "Österreich",
-                "AT": "Österreich",
-                "Schweiz": "Schweiz",
-                "CH": "Schweiz",
-                "Luxemburg": "Luxemburg",
-                "LU": "Luxemburg",
-                "Liechtenstein": "Liechtenstein",
-                "LI": "Liechtenstein"
+                # Pays germanophones
+                "Deutschland": "DE",
+                "Germany": "DE",
+                "Österreich": "AT",
+                "Austria": "AT",
+                "Schweiz": "CH",
+                "Switzerland": "CH",
+                "Luxemburg": "LU",
+                "Luxembourg": "LU",
+                "Liechtenstein": "LI",
             },
             "PT": {
-                "Portugal": "Portugal",
-                "PT": "Portugal",
-                "Brasil": "Brasil",
-                "BR": "Brasil",
-                "Angola": "Angola",
-                "AO": "Angola",
-                "Moçambique": "Moçambique",
-                "MZ": "Moçambique",
-                "Cabo Verde": "Cabo Verde",
-                "CV": "Cabo Verde"
+                # Pays lusophones
+                "Portugal": "PT",
+                "Brasil": "BR",
+                "Brazil": "BR",
+                "Angola": "AO",
+                "Moçambique": "MZ",
+                "Mozambique": "MZ",
+                "Cabo Verde": "CV",
+                "Cape Verde": "CV",
+                "Guiné-Bissau": "GW",
+                "Guinea-Bissau": "GW",
+                "São Tomé e Príncipe": "ST",
+                "Timor-Leste": "TL",
+                "Guiné Equatorial": "GQ",
+                "Macau": "MO",
             }
         }
         return mappings.get(language, {})
     
-    def _generate_discovery_prompt(self, country: str, language: str, search_term: str, category: str = "") -> str:
+    def _generate_discovery_prompt(self, country: str, language: str, search_term: str, category: str = "", exclude_orgs: List[str] = None) -> str:
         """Génère le prompt pour la découverte LLM - Version améliorée avec support de catégorie (PHASE 2)"""
+        
+        # ✅ Gérer exclude_orgs (organisations à éviter)
+        if exclude_orgs is None:
+            exclude_orgs = []
         
         # 🎯 CAS SPÉCIAL: procedure_plateforme cherche les pages officielles des réseaux sociaux
         if category == "procedure_plateforme":
@@ -1098,6 +1284,20 @@ class LegacyAPIAdapter:
         
         category_desc = category_descriptions.get(category, search_term) if category else search_term
         
+        # ✅ Préparer la liste d'exclusion si présente
+        exclusion_text = ""
+        if exclude_orgs and len(exclude_orgs) > 0:
+            org_list = ", ".join(exclude_orgs)
+            exclusion_map = {
+                "FR": f"\n⛔ ÉVITE ABSOLUMENT ces organisations déjà trouvées : {org_list}",
+                "ES": f"\n⛔ EVITA ABSOLUTAMENTE estas organizaciones ya encontradas: {org_list}",
+                "IT": f"\n⛔ EVITA ASSOLUTAMENTE queste organizzazioni già trovate: {org_list}",
+                "DE": f"\n⛔ VERMEIDE UNBEDINGT diese bereits gefundenen Organisationen: {org_list}",
+                "PT": f"\n⛔ EVITE ABSOLUTAMENTE estas organizações já encontradas: {org_list}",
+                "EN": f"\n⛔ ABSOLUTELY AVOID these already found organizations: {org_list}"
+            }
+            exclusion_text = exclusion_map.get(language, exclusion_map["EN"])
+        
         if language == "FR":
             category_prompt = f" qui propose des {category_desc}" if category else ""
             return f"""Trouve-moi une association ou organisation LOCALE RÉELLE et EXISTANTE{category_prompt} spécifiquement en {country}.
@@ -1108,7 +1308,7 @@ IMPORTANT:
 - Cherche UNIQUEMENT des associations LOCALES basées en {country}
 - Évite les organisations internationales ou d'autres pays
 - Évite de répéter les mêmes organisations
-- La catégorie cible est: {category_desc}
+- La catégorie cible est: {category_desc}{exclusion_text}
 
 Réponds uniquement en français et sous ce format exact :
 Nom : [nom exact de l'association/organisation]
@@ -1138,7 +1338,7 @@ IMPORTANTE:
 - Busca ÚNICAMENTE asociaciones LOCALES basadas en {country}
 - Evita organizaciones internacionales o de otros países
 - Evita repetir las mismas organizaciones
-- La categoría objetivo es: {category_desc}
+- La categoría objetivo es: {category_desc}{exclusion_text}
 
 Responde solo en español y usa este formato exacto:
 Nombre: [nombre exacto de la asociación/organización]
@@ -1168,7 +1368,7 @@ IMPORTANTE:
 - Cerca SOLO associazioni LOCALI basate in {country}
 - Evita organizzazioni internazionali o di altri paesi
 - Evita di ripetere le stesse organizzazioni
-- La categoria target è: {category_desc}
+- La categoria target è: {category_desc}{exclusion_text}
 
 Rispondi solo in italiano usando questo formato esatto:
 Nome: [nome esatto dell'associazione/organizzazione]
@@ -1198,7 +1398,7 @@ WICHTIG:
 - Suche NUR nach LOKALEN Vereinigungen mit Sitz in {country}
 - Vermeide internationale Organisationen oder aus anderen Ländern
 - Vermeide die Wiederholung derselben Organisationen
-- Die Zielkategorie ist: {category_desc}
+- Die Zielkategorie ist: {category_desc}{exclusion_text}
 
 Antworte nur auf Deutsch in diesem exakten Format:
 Namen: [exakter Name der Vereinigung/Organisation]
@@ -1228,7 +1428,7 @@ IMPORTANTE:
 - Procure APENAS associações LOCAIS baseadas em {country}
 - Evite organizações internacionais ou de outros países
 - Evite repetir as mesmas organizações
-- A categoria alvo é: {category_desc}
+- A categoria alvo é: {category_desc}{exclusion_text}
 
 Responda apenas em português usando este formato exato:
 Nome: [nome exato da associação/organização]
@@ -1258,7 +1458,7 @@ IMPORTANT:
 - Look for LOCAL associations ONLY based in {country}
 - Avoid international organizations or from other countries
 - Avoid repeating the same organizations
-- The target category is: {category_desc}
+- The target category is: {category_desc}{exclusion_text}
 
 Respond only in English using this exact format:
 Name: [exact name of the association/organization]

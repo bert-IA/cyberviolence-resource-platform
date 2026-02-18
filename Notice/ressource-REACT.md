@@ -7347,6 +7347,8 @@ export interface ValidationResponse {
 
 // 🆕 Interface pour les stats groupées
 export interface ResourceStats {
+  success: boolean
+  status_filtered: string  // 🆕 Statut filtré (discovered, geo_validated, rag_ready)
   total_pending: number
   by_country: {
     [countryCode: string]: {
@@ -7381,8 +7383,10 @@ export async function validateBatch(
 
 // 🆕 FONCTION STATS GROUPÉES
 
-export async function getResourceStats(): Promise<ResourceStats> {
-  const response = await fetch(`${API_BASE_URL}/resources/stats`, {
+export async function getResourceStats(
+  status: string = 'discovered'  // 🆕 Paramètre status avec valeur par défaut
+): Promise<ResourceStats> {
+  const response = await fetch(`${API_BASE_URL}/sources/summary?status=${status}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -7408,11 +7412,44 @@ export async function getResourceStats(): Promise<ResourceStats> {
    - `rejected` : Nombre de ressources rejetées
    - `message` : Message de confirmation
 
-3. **validateBatch()** : Fonction async qui :
+3. **ResourceStats** : Type pour les stats groupées (🆕)
+   - `status_filtered` : Statut filtré par le backend ("discovered", "geo_validated", "rag_ready")
+   - `total_pending` : Nombre total de ressources avec ce statut
+   - `by_country` : Groupement par pays avec count + label
+   - `by_category` : Groupement par catégorie avec count
+
+4. **validateBatch()** : Fonction async qui :
    - Fait un POST vers `/geographic/validate-batch`
    - Envoie les données en JSON
    - Throw une erreur si status HTTP ≠ 2xx
    - Retourne la réponse parsée
+
+5. **getResourceStats(status)** : Fonction async qui (🆕) :
+   - Fait un GET vers `/sources/summary?status={status}`
+   - Paramètre `status` avec valeur par défaut "discovered"
+   - **Important** : Filtrage côté backend, pas client !
+   - Retourne stats groupées par pays + catégories
+
+**Utilisation du paramètre `status` par page** :
+```typescript
+// ValidationPage (validation géographique)
+getResourceStats('discovered')
+// → Ressources à valider géographiquement
+
+// RAGPrepPage (extraction données)
+getResourceStats('geo_validated')
+// → Ressources validées géo, prêtes pour extraction
+
+// RAGReadyPage (vérification finale)
+getResourceStats('rag_ready')
+// → Ressources prêtes pour indexation RAG
+```
+
+**Pourquoi filtrer par statut ?**
+- ✅ Performance : Backend envoie seulement données pertinentes
+- ✅ Séparation : Chaque page affiche SES ressources
+- ✅ Cache optimisé : `['resources', 'stats', 'discovered']` ≠ `['resources', 'stats', 'geo_validated']`
+- ✅ Workflow clair : Pas de confusion entre étapes
 
 ---
 
@@ -7420,28 +7457,27 @@ export async function getResourceStats(): Promise<ResourceStats> {
 
 **Fichier** : `src/hooks/useResourcesByStatus.ts`
 
-Ce hook va récupérer les ressources filtrées par statut (ici : "discovered").
+Ce hook va récupérer les ressources filtrées par statut.
 
 ```typescript
 // src/hooks/useResourcesByStatus.ts
 
-import { useQuery } from '@tanstack/react-query'
-import { fetchResources } from '../services/api'
-import type { DiscoveredResource } from '../services/api'
+import { useQuery } from "@tanstack/react-query";
+import { fetchResources, type Resource } from "../services/api";
 
 export function useResourcesByStatus(status: string) {
-  return useQuery<DiscoveredResource[]>({
-    queryKey: ['resources', status],
-    queryFn: () => fetchResources(status),
-    staleTime: 1000 * 60 * 2,  // 2 minutes
-  })
+    return useQuery<Resource[]>({
+        queryKey: ['resources', status],
+        queryFn: () => fetchResources(status),
+        staleTime: 1000 * 60 * 2,
+    })
 }
 ```
 
 **📖 Explications** :
 
 1. **queryKey : ['resources', status]**
-   - Cache séparé par statut : `['resources', 'discovered']` ≠ `['resources', 'validated']`
+   - Cache séparé par statut : `['resources', 'discovered']` ≠ `['resources', 'geo_validated']`
    - Permet d'invalider sélectivement : "Invalide seulement les ressources discovered"
 
 2. **queryFn : () => fetchResources(status)**
@@ -7576,10 +7612,10 @@ import { useQuery } from '@tanstack/react-query'
 import { getResourceStats } from '../services/api'
 import type { ResourceStats } from '../services/api'
 
-export function useResourceStats() {
+export function useResourceStats(status: string = 'discovered') {  // 🆕 Paramètre status
   return useQuery<ResourceStats>({
-    queryKey: ['resources', 'stats'],
-    queryFn: getResourceStats,
+    queryKey: ['resources', 'stats', status],  // 🆕 Inclure status dans la clé
+    queryFn: () => getResourceStats(status),   // 🆕 Passer status à l'API
     staleTime: 1000 * 60,  // 1 minute (stats changent quand on valide)
     refetchOnWindowFocus: true,  // Refetch quand user revient sur l'onglet
   })
@@ -7588,24 +7624,62 @@ export function useResourceStats() {
 
 **📖 Explications** :
 
-1. **queryKey : ['resources', 'stats']**
-   - Cache séparé pour les stats
-   - Sera invalidé quand on valide des ressources
+1. **Paramètre `status` avec valeur par défaut "discovered"**
+   - Permet de réutiliser le hook pour différentes pages
+   - ValidationPage : `useResourceStats('discovered')`
+   - RAGPrepPage : `useResourceStats('geo_validated')`
+   - RAGReadyPage : `useResourceStats('rag_ready')`
 
-2. **staleTime : 1 minute**
+2. **queryKey : ['resources', 'stats', status]** (🆕)
+   - Cache séparé par statut
+   - `['resources', 'stats', 'discovered']` ≠ `['resources', 'stats', 'geo_validated']`
+   - Permet invalidation ciblée par statut
+
+3. **queryFn : () => getResourceStats(status)** (🆕)
+   - Appelle l'API avec le paramètre status
+   - GET `/sources/summary?status=discovered`
+
+4. **staleTime : 1 minute**
    - Plus court que les autres queries car les stats changent fréquemment
    - Après validation, on veut voir les nouvelles stats rapidement
 
-3. **refetchOnWindowFocus : true**
+5. **refetchOnWindowFocus : true**
    - Si user change d'onglet puis revient → refetch automatique
    - Utile si plusieurs admins travaillent en même temps
 
-**Utilisation** :
+**Utilisation par page** :
 ```tsx
-const { data: stats, isLoading } = useResourceStats()
+// 📍 ValidationPage - Validation géographique
+const { data: stats, isLoading } = useResourceStats('discovered')
+// stats = { 
+//   status_filtered: 'discovered',
+//   total_pending: 75, 
+//   by_country: { FR: { count: 25, label: 'France' }, ... },
+//   by_category: { procedure_plateforme: 9, ... }
+// }
 
-// stats = { total_pending: 75, by_country: {...}, by_category: {...} }
+// 📍 RAGPrepPage - Extraction données (future étape)
+const { data: stats } = useResourceStats('geo_validated')
+// stats = { 
+//   status_filtered: 'geo_validated',
+//   total_pending: 45, 
+//   by_country: { FR: { count: 12, label: 'France' }, ... }
+// }
+
+// 📍 RAGReadyPage - Vérification finale (future étape)
+const { data: stats } = useResourceStats('rag_ready')
+// stats = { 
+//   status_filtered: 'rag_ready',
+//   total_pending: 120, 
+//   by_country: { FR: { count: 30, label: 'France' }, ... }
+// }
 ```
+
+**Avantages de cette approche** :
+- ✅ **Réutilisabilité** : Même hook pour toutes les pages
+- ✅ **Cache optimisé** : Données séparées par statut
+- ✅ **Performance** : Backend filtre, pas le client
+- ✅ **Clarté** : `status_filtered` confirme le filtre appliqué
 
 ---
 
@@ -7613,7 +7687,253 @@ const { data: stats, isLoading } = useResourceStats()
 
 **Fichier** : `src/hooks/useValidationWorkflow.ts`
 
-Hook qui gère l'état du workflow multi-step avec `useReducer`.
+#### 🎯 Objectif Concret : Gérer un Workflow Multi-Étapes
+
+**Le Problème** : Tu as 75 ressources à valider. Comment naviguer efficacement ?
+
+**Solution** : Un workflow en 2 étapes avec filtrage intelligent :
+
+```
+1️⃣ ÉTAPE 'overview' (Vue Synthèse)
+┌─────────────────────────────────────────┐
+│ 📊 Ressources en attente : 75          │
+│                                          │
+│ 🌍 Par Pays:                            │
+│  [France: 25]  [Espagne: 30]  [Italie: 20] │
+│                                          │
+│ 🏷️ Par Catégorie:                       │
+│  [Contact urgence: 9]  [Procédure: 10] │
+│  [Signalement: 12]                      │
+└─────────────────────────────────────────┘
+   ↓ User clique "France: 25"
+   
+2️⃣ ÉTAPE 'review' (Liste Filtrée)
+┌─────────────────────────────────────────┐
+│ ← Retour    France: 25 ressources      │
+│                                          │
+│ □ [Ressource 1 - France]                │
+│ □ [Ressource 2 - France]                │
+│ □ [Ressource 3 - France]                │
+│ ...                                      │
+│                                          │
+│ [Valider sélection] [Rejeter sélection] │
+└─────────────────────────────────────────┘
+   ↓ User valide 10 ressources
+   
+RETOUR AUTOMATIQUE à l'étape 1 avec stats mises à jour
+┌─────────────────────────────────────────┐
+│ 📊 Ressources en attente : 65           │
+│ 🌍 Par Pays:                            │
+│  [France: 15]  [Espagne: 30]  ...      │
+│       ↑                                  │
+│    25 - 10 = 15                         │
+└─────────────────────────────────────────┘
+```
+
+#### 🤔 Pourquoi useReducer au lieu de useState ?
+
+**Avec useState (❌ Problématique)** :
+
+```typescript
+// ❌ PROBLÈME 1 : État fragmenté et incohérent
+const [step, setStep] = useState('overview')
+const [filter, setFilter] = useState({})
+const [selectedIds, setSelectedIds] = useState([])
+const [groupBy, setGroupBy] = useState('all')
+
+// ❌ PROBLÈME 2 : Risque d'incohérence
+const handleSelectCountry = (country) => {
+  setStep('review')           // Oubli possible !
+  setFilter({ country })      
+  setSelectedIds([])          // Oubli possible !
+  setGroupBy('country')       // Oubli possible !
+  // Si tu oublies un setState → État incohérent !
+}
+
+// ❌ PROBLÈME 3 : Difficile à debugger
+// État dispersé dans 4 variables différentes
+// Impossible de voir l'historique des transitions
+```
+
+**Avec useReducer (✅ Solution)** :
+
+```typescript
+// ✅ AVANTAGE 1 : État centralisé
+const [state, dispatch] = useReducer(validationReducer, initialState)
+// Un seul objet contient tout l'état
+
+// ✅ AVANTAGE 2 : Transitions explicites et atomiques
+dispatch({ type: 'SELECT_COUNTRY', country: 'FR' })
+// → step='review' + filter={country:'FR'} + selectedIds=[] + groupBy='country'
+// Tout change en une seule opération atomique !
+
+// ✅ AVANTAGE 3 : Facile à debugger
+// Reducers peuvent être testés purs (pas de side effects)
+// État prévisible : même action → même résultat
+```
+
+#### 📊 Les 4 Propriétés de l'État
+
+**L'état géré par ce hook** :
+
+```typescript
+type ValidationState = {
+  step: 'overview' | 'review',    // Étape courante du workflow
+  filter: {                        // Filtre actif (pays OU catégorie)
+    country?: string,              // Code pays (ex: 'FR')
+    category?: string              // Catégorie (ex: 'contact_urgence')
+  },
+  selectedIds: string[],          // IDs des ressources cochées
+  groupBy: 'country' | 'category' | 'all'  // Type de groupement actif
+}
+```
+
+**Exemples d'états concrets** :
+
+```typescript
+// État initial (chargement page)
+{
+  step: 'overview',
+  filter: {},
+  selectedIds: [],
+  groupBy: 'all'
+}
+
+// Après clic "France [25]"
+{
+  step: 'review',
+  filter: { country: 'FR' },
+  selectedIds: [],
+  groupBy: 'country'
+}
+
+// User coche 3 ressources
+{
+  step: 'review',
+  filter: { country: 'FR' },
+  selectedIds: ['res_001', 'res_012', 'res_025'],
+  groupBy: 'country'
+}
+
+// Après validation → Retour automatique
+{
+  step: 'overview',
+  filter: {},
+  selectedIds: [],
+  groupBy: 'all'
+}
+```
+
+#### 🎬 Les 7 Actions Possibles
+
+**Chaque action décrit UNE transition d'état** :
+
+```typescript
+// 1️⃣ SELECT_COUNTRY : User clique sur carte pays
+dispatch({ type: 'SELECT_COUNTRY', country: 'FR' })
+// → overview → review + filter par pays
+
+// 2️⃣ SELECT_CATEGORY : User clique sur carte catégorie
+dispatch({ type: 'SELECT_CATEGORY', category: 'contact_urgence' })
+// → overview → review + filter par catégorie
+
+// 3️⃣ SHOW_ALL : User clique "Tout afficher"
+dispatch({ type: 'SHOW_ALL' })
+// → overview → review + pas de filtre (affiche les 75)
+
+// 4️⃣ BACK_TO_OVERVIEW : User clique "← Retour"
+dispatch({ type: 'BACK_TO_OVERVIEW' })
+// → review → overview + reset filtres + clear sélection
+
+// 5️⃣ TOGGLE_SELECTION : User coche/décoche une checkbox
+dispatch({ type: 'TOGGLE_SELECTION', id: 'res_001' })
+// → Ajoute ou retire de selectedIds
+
+// 6️⃣ SELECT_ALL : User clique "Tout sélectionner"
+dispatch({ type: 'SELECT_ALL', ids: ['res_001', 'res_002', ...] })
+// → Remplace selectedIds par tous les IDs affichés
+
+// 7️⃣ CLEAR_SELECTION : User clique "Tout désélectionner"
+dispatch({ type: 'CLEAR_SELECTION' })
+// → selectedIds = []
+```
+
+#### 🔄 Flow Utilisateur Complet (Exemple Réel)
+
+```
+USER : Arrive sur ValidationPage
+STATE: { step: 'overview', filter: {}, selectedIds: [], groupBy: 'all' }
+UI   : Affiche stats → France [25], Espagne [30], Italie [20]
+
+↓ User clique "France [25]"
+
+ACTION: dispatch({ type: 'SELECT_COUNTRY', country: 'FR' })
+STATE: { step: 'review', filter: { country: 'FR' }, selectedIds: [], groupBy: 'country' }
+UI   : Affiche liste des 25 ressources France
+
+↓ User coche ressource res_001
+
+ACTION: dispatch({ type: 'TOGGLE_SELECTION', id: 'res_001' })
+STATE: { step: 'review', filter: { country: 'FR' }, selectedIds: ['res_001'], groupBy: 'country' }
+UI   : Checkbox cochée + Badge "1 sélectionnée"
+
+↓ User coche ressource res_012 et res_025
+
+ACTION: dispatch({ type: 'TOGGLE_SELECTION', id: 'res_012' })
+ACTION: dispatch({ type: 'TOGGLE_SELECTION', id: 'res_025' })
+STATE: { step: 'review', filter: { country: 'FR' }, selectedIds: ['res_001', 'res_012', 'res_025'], groupBy: 'country' }
+UI   : 3 checkboxes cochées + Badge "3 sélectionnées"
+
+↓ User clique "Valider sélection"
+
+MUTATION: validateBatch({ source_ids: ['res_001', 'res_012', 'res_025'], action: 'approve' })
+CALLBACK onSuccess: dispatch({ type: 'BACK_TO_OVERVIEW' })
+STATE: { step: 'overview', filter: {}, selectedIds: [], groupBy: 'all' }
+UI   : Retour synthèse + Stats mises à jour → France [22] (25-3)
+```
+
+#### 🧪 Pourquoi C'est Puissant
+
+**1️⃣ État prévisible** :
+```typescript
+// Toujours le même état final pour la même action
+const state1 = validationReducer(initialState, { type: 'SELECT_COUNTRY', country: 'FR' })
+const state2 = validationReducer(initialState, { type: 'SELECT_COUNTRY', country: 'FR' })
+// state1 === state2 (même objet)
+```
+
+**2️⃣ Testable facilement** :
+```typescript
+// Test unitaire sans React
+test('SELECT_COUNTRY change step to review', () => {
+  const result = validationReducer(
+    { step: 'overview', filter: {}, selectedIds: [], groupBy: 'all' },
+    { type: 'SELECT_COUNTRY', country: 'FR' }
+  )
+  expect(result.step).toBe('review')
+  expect(result.filter.country).toBe('FR')
+})
+```
+
+**3️⃣ Time-travel debugging** :
+```typescript
+// Redux DevTools peuvent afficher historique
+1. Initial: { step: 'overview', ... }
+2. SELECT_COUNTRY: { step: 'review', filter: { country: 'FR' } }
+3. TOGGLE_SELECTION: { ..., selectedIds: ['res_001'] }
+4. BACK_TO_OVERVIEW: { step: 'overview', ... }
+// Tu peux revenir en arrière dans le temps !
+```
+
+**4️⃣ Logique centralisée** :
+```typescript
+// Toute la logique de transition dans UN SEUL ENDROIT
+// Facile à maintenir, modifier, comprendre
+```
+
+---
+
+**Maintenant le code du hook** :
 
 ```typescript
 // src/hooks/useValidationWorkflow.ts
@@ -8358,11 +8678,11 @@ export function ValidationPage() {
   // 🔄 État du workflow
   const { state, dispatch } = useValidationWorkflow()
   
-  // 📊 Fetch ressources à valider
+  // 📊 Fetch ressources à valider (status = 'discovered')
   const { data: resources, isLoading, error, refetch } = useResourcesByStatus('discovered')
   
-  // 📈 Fetch stats
-  const { data: stats, isLoading: statsLoading } = useResourceStats()
+  // 📈 Fetch stats FILTRÉES pour 'discovered' uniquement
+  const { data: stats, isLoading: statsLoading } = useResourceStats('discovered')
   
   // 🔄 Hook de validation
   const validateBatch = useValidateBatch()
@@ -9343,15 +9663,17 @@ Avant de considérer cette étape terminée, vérifie que :
 
 **Service API** :
 - [ ] Tu as ajouté `validateBatch()` dans `services/api.ts`
-- [ ] Tu as ajouté `getResourceStats()` dans `services/api.ts` (🆕)
-- [ ] Tu as défini les interfaces `ValidationRequest`, `ValidationResponse`, `ResourceStats` (🆕)
+- [ ] Tu as ajouté `getResourceStats(status)` dans `services/api.ts` (🆕 avec paramètre status)
+- [ ] Tu as défini les interfaces `ValidationRequest`, `ValidationResponse`, `ResourceStats` (🆕 avec status_filtered)
+- [ ] Tu as changé l'endpoint de `/resources/stats` vers `/sources/summary?status={status}` (🆕)
 
 **Hooks** :
 - [ ] Tu as créé `useResourcesByStatus.ts`
-- [ ] Tu as créé `useResourceStats.ts` (🆕 pour stats groupées)
+- [ ] Tu as créé `useResourceStats.ts` avec paramètre status (🆕 pour stats groupées par status)
 - [ ] Tu as créé `useValidateBatch.ts` avec callbacks `onSuccess` et `onError`
 - [ ] Tu as créé `useValidationWorkflow.ts` avec `useReducer` (🆕 workflow multi-step)
 - [ ] Tu comprends comment `invalidateQueries()` synchronise le cache
+- [ ] Tu comprends la queryKey par status : `['resources', 'stats', 'discovered']` vs `['resources', 'stats', 'geo_validated']` (🆕)
 
 **Composants UI** :
 - [ ] Tu as créé `StatCard.tsx` (🆕 cartes cliquables pour stats)
@@ -9373,14 +9695,17 @@ Avant de considérer cette étape terminée, vérifie que :
 
 **Backend Requis** :
 - [ ] Endpoint `POST /geographic/validate-batch` fonctionne
-- [ ] Endpoint `GET /resources/stats` implémenté (🆕)
+- [ ] Endpoint `GET /sources/summary?status={status}` implémenté (🆕 remplace /resources/stats)
   ```json
   {
+    "success": true,
+    "status_filtered": "discovered",
     "total_pending": 75,
     "by_country": { "FR": { "count": 25, "label": "France" } },
     "by_category": { "procedure_plateforme": 9 }
   }
   ```
+- [ ] Endpoint supporte les statuts : `discovered`, `geo_validated`, `rag_ready` (🆕)
 
 **Concepts React Compris** :
 - [ ] Tu comprends `useMutation` avec callbacks
@@ -9394,12 +9719,15 @@ Avant de considérer cette étape terminée, vérifie que :
 
 **Tests Workflow Validation par Groupe** :
 - [ ] Page Validation affiche la vue synthèse au chargement
+- [ ] ValidationPage utilise `useResourceStats('discovered')` pas `useResourceStats()` (🆕 status parameter)
+- [ ] Stats affichées correspondent au statut 'discovered' uniquement (🆕)
 - [ ] Clic sur carte pays (ex: France [25]) filtre et affiche les 25 ressources
 - [ ] Bouton "Retour à la synthèse" ramène à la vue overview
 - [ ] Sélection multiple fonctionne avec checkbox
 - [ ] "Tout sélectionner" / "Tout désélectionner" fonctionnent
 - [ ] Validation batch met à jour les stats et retourne à l'overview
 - [ ] Stats se rafraîchissent automatiquement après validation
+- [ ] Après validation, ressources passent de `discovered` → `geo_validated` et disparaissent de ValidationPage (🆕)
 
 **Tests Actions Inline** :
 - [ ] Page Ressources affiche toutes les ressources
@@ -9419,6 +9747,13 @@ Avant de considérer cette étape terminée, vérifie que :
 - [ ] Tu as ajouté un **filtre additionnel** (score de confiance, is_new, etc.)
 - [ ] Tu as ajouté la **pagination** pour grandes listes
 - [ ] Tu as ajouté un **search bar** dans ResourceReviewList
+
+**Architecture Workflow par Status** (🆕) :
+- [ ] **ValidationPage** : utilise `useResourceStats('discovered')` et `useResourcesByStatus('discovered')`
+- [ ] **RAGPrepPage** (future) : utilisera `useResourceStats('geo_validated')` et `useResourcesByStatus('geo_validated')`
+- [ ] **RAGReadyPage** (future) : utilisera `useResourceStats('rag_ready')` et `useResourcesByStatus('rag_ready')`
+- [ ] Chaque page a son propre cache TanStack Query : `['resources', 'stats', status]`
+- [ ] Après validation, `invalidateQueries(['resources'])` rafraîchit toutes les pages automatiquement
 
 **Architecture UX Validée** :
 - [x] Menu Validation = workflow principal avec vue stratégique

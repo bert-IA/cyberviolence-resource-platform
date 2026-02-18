@@ -3,13 +3,16 @@ interface ButtonProps {
     onClick: () => void
     variant?: 'primary' | 'secondary' | 'tab' | 'tab-active'
     disabled?: boolean
+    type?: 'button' | 'submit' | 'reset'
 }
 
 export function Button({
     label,
     onClick,
     variant = 'primary',
-    disabled = false
+    disabled = false,
+    type = 'button'
+
 }: ButtonProps) {
 
     const baseStyles = "px-4 py-2 rounded-lg font-medium transition-colors"
@@ -27,6 +30,7 @@ export function Button({
 
     return (
         <button
+            type={type}
             onClick={onClick}
             disabled={disabled}
             className={`${baseStyles} ${variantStyles} ${disabledStyles}`}

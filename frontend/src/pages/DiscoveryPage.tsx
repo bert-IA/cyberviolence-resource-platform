@@ -1,15 +1,67 @@
+import { useState } from 'react'
 import { useDiscoverResources } from '../hooks/useDiscoverResources'
 import { DiscoveryForm } from '../components/features/DiscoveryForm'  // Défini dans Étape 3 partie 1
 import { DiscoveredResourcesList } from '../components/features/DiscoveredResourcesList'
+import { ValidationActions } from '../components/features/ValidationActions'
+import { useValidateBatch } from '../hooks/useValidateBatch'
 import { LoadingSpinner } from '../components/ui/LoadingSpinner'
 import { ErrorMessage } from '../components/ui/ErrorMessage'
 
+
 export function DiscoveryPage() {
     const discovery = useDiscoverResources()
+    const validateBatch = useValidateBatch()
+
+    // 🆕 État local pour masquer les ressources traitées
+    const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
 
     const handleSearch = (filters: any) => {
+        setHiddenIds(new Set())
         discovery.mutate(filters)
     }
+
+    const handleApprove = (resourceId: string) => {
+        // 🎯 Optimistic update : masquer immédiatement
+        setHiddenIds(prev => new Set(prev).add(resourceId))
+
+        validateBatch.mutate({
+            resource_ids: [resourceId],
+            action: 'approve'
+        }, {
+            onError: () => {
+                // ↩️ Rollback : réafficher en cas d'erreur
+                setHiddenIds(prev => {
+                    const next = new Set(prev)
+                    next.delete(resourceId)
+                    return next
+                })
+            }
+        })
+    }
+
+    const handleReject = (resourceId: string) => {
+        // � Optimistic update : masquer immédiatement
+        setHiddenIds(prev => new Set(prev).add(resourceId))
+
+        validateBatch.mutate({
+            resource_ids: [resourceId],
+            action: 'reject'
+        }, {
+            onError: () => {
+                // ↩️ Rollback : réafficher en cas d'erreur
+                setHiddenIds(prev => {
+                    const next = new Set(prev)
+                    next.delete(resourceId)
+                    return next
+                })
+            }
+        })
+    }
+
+    // 🆕 Filtrer les ressources visibles
+    const visibleResources = discovery.data?.newly_discovered?.filter(
+        r => !hiddenIds.has(r.id)
+    ) || []
 
     return (
         <div className="max-w-7xl mx-auto p-6">
@@ -58,8 +110,16 @@ export function DiscoveryPage() {
                                     </p>
                                 )}
                             </div>
-
-                            <DiscoveredResourcesList resources={discovery.data.newly_discovered || []} />
+                            <DiscoveredResourcesList
+                                resources={visibleResources}
+                                renderActions={(resource) => (
+                                    <ValidationActions
+                                        onApprove={() => handleApprove(resource.id)}
+                                        onReject={() => handleReject(resource.id)}
+                                        isProcessing={validateBatch.isPending}
+                                    />
+                                )}
+                            />
                         </>
                     )}
 

@@ -17,12 +17,14 @@ const queryClient = new QueryClient({
   },
 })
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <BrowserRouter>
-      <QueryClientProvider client={queryClient}>
-        <App />
-        <ReactQueryDevtools initialIsOpen={false} />
-      </QueryClientProvider>
-    </BrowserRouter>
-  </StrictMode>,
+  // ⚠️ StrictMode désactivé en dev pour éviter double toast
+  // En production, réactiver pour meilleure détection de bugs
+  // <StrictMode>
+  <BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <App />
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
+  </BrowserRouter>
+  // </StrictMode>
 )

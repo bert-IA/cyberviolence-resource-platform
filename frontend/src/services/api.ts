@@ -2,6 +2,8 @@ export const API_BASE_URL = 'http://localhost:8000'
 export const AUTH_TOKEN = 'Bearer admin-token-2024'
 
 // Ressource complète (utilisée pour /sources, validation, etc.)
+// === INTERFACES ===
+
 export interface Resource {
     id: string
     name: string
@@ -61,6 +63,32 @@ export interface DiscoveryResponse {
     newly_discovered: DiscoveredResource[]
     estimated_duration?: string
 }
+export interface ValidationRequest {
+    resource_ids: string[]  // ✅ FIX: Aligné avec le backend (était source_ids)
+    action: 'approve' | 'reject'
+}
+
+export interface ValidationResponse {
+    approved: number
+    rejected: number
+    message: string
+}
+
+// 🆕 Interface pour les stats groupées
+export interface ResourceStats {
+    success: boolean
+    status_filtered: string  // 🆕 Statut filtré (discovered, geo_validated, rag_ready)
+    total_pending: number
+    by_country: {
+        [countryCode: string]: {
+            count: number
+            label: string
+        }
+    }
+    by_category: {
+        [category: string]: number
+    }
+}
 
 // ============================================
 // Fonctions API - Discovery
@@ -69,6 +97,8 @@ export interface DiscoveryResponse {
 export async function discoverResources(
     filters: DiscoveryFilters
 ): Promise<DiscoveryResponse> {
+    console.log('📤 [API] POST /geographic/discover avec:', JSON.stringify(filters, null, 2))
+
     const response = await fetch(`${API_BASE_URL}/geographic/discover`, {
         method: 'POST',
         headers: {
@@ -78,20 +108,28 @@ export async function discoverResources(
         body: JSON.stringify(filters)
     })
 
+    console.log('📥 [API] Response status:', response.status, response.statusText)
+
     if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ [API] Erreur response:', errorText)
         throw new Error(`Erreur API: ${response.status}`)
     }
 
     const backendResponse: BackendDiscoveryResponse = await response.json()
+    console.log('📦 [API] Backend response:', JSON.stringify(backendResponse, null, 2))
 
     // Transformer la structure backend vers la structure frontend
-    return {
+    const result = {
         success: backendResponse.success,
         message: backendResponse.message,
         total_discovered: backendResponse.data.discovered_count,
         newly_discovered: backendResponse.data.resources,
         estimated_duration: backendResponse.data.estimated_duration
     }
+
+    console.log('🔄 [API] Transformation frontend:', result)
+    return result
 }
 
 // ============================================
@@ -158,6 +196,44 @@ export async function rejectResource(id: string): Promise<void> {
     if (!response.ok) {
         throw new Error(`Erreur rejet: ${response.status}`)
     }
+}
+export async function validateBatch(
+    request: ValidationRequest
+): Promise<ValidationResponse> {
+    const response = await fetch(`${API_BASE_URL}/geographic/validate-batch`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': AUTH_TOKEN,
+        },
+        body: JSON.stringify(request),
+    })
+
+    if (!response.ok) {
+        throw new Error(`Validation failed: ${response.statusText}`)
+    }
+
+    return response.json()
+}
+
+// 🆕 FONCTION STATS GROUPÉES
+
+export async function getResourceStats(
+    status: string = 'discovered'  // 🆕 Paramètre status avec valeur par défaut
+): Promise<ResourceStats> {
+    const response = await fetch(`${API_BASE_URL}/sources/summary?status=${status}`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': AUTH_TOKEN,
+        },
+    })
+
+    if (!response.ok) {
+        throw new Error(`Failed to fetch stats: ${response.statusText}`)
+    }
+
+    return response.json()
 }
 
 // ============================================

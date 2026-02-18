@@ -7,6 +7,7 @@ interface DiscoveredResourcesListProps {
 }
 
 export function DiscoveredResourcesList({ resources, renderActions }: DiscoveredResourcesListProps) {
+
     // Protection contre undefined/null
     if (!resources || resources.length === 0) {
         return (
@@ -17,10 +18,41 @@ export function DiscoveredResourcesList({ resources, renderActions }: Discovered
             </div>
         )
     }
+    function groupedByCategory(resources: DiscoveredResource[]) {
+        const grouped = resources.reduce((acc, resource) => {
+            if (!acc[resource.category]) {
+                acc[resource.category] = []
+            }
+            acc[resource.category].push(resource)
+            return acc
+        }, {} as Record<string, DiscoveredResource[]>)
+        return grouped
+    }
+
+    const categoryOrder = [
+        'association_locale',   // 🏢 
+        'contact_urgence',      // 📞 
+        'procedure_plateforme',  // 🌐 
+        'signalement_autorite' // 🏛️ 
+    ]
+
+    function sortByCategory(resources: DiscoveredResource[]) {
+        const grouped = groupedByCategory(resources)
+        return (categoryOrder
+            .map(category => ({
+                category,
+                resources: grouped[category] || []
+            }))
+            .filter(group => group.resources.length > 0)
+        )
+    }
 
     // Séparer nouvelles ressources et doublons
     const newResources = resources.filter(r => r.is_new)
     const duplicates = resources.filter(r => !r.is_new)
+
+    const sortedNew = sortByCategory(newResources)
+    const sortedDuplicates = sortByCategory(duplicates)
 
     return (
         <div className="space-y-6">
@@ -41,36 +73,50 @@ export function DiscoveredResourcesList({ resources, renderActions }: Discovered
             {/* Nouvelles ressources */}
             {newResources.length > 0 && (
                 <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-blue-500 mb-3 flex items-center gap-2">
                         <span>🆕</span>
-                        Nouvelles ressources ({newResources.length})
+                        NOUVELLES RESSOURCES ({newResources.length})
                     </h3>
                     <div className="space-y-4">
-                        {newResources.map(resource => (
-                            <DiscoveredResourceCard key={resource.id} resource={resource}>
-                                {renderActions && renderActions(resource)}
-                            </DiscoveredResourceCard>
+                        {sortedNew.map(group => (
+                            <div key={group.category}>
+                                <h4 className="text-lg  text-blue-900 mb-3 flex items-center gap-2">{group.category}</h4>
+                                {group.resources.map(resource => (
+                                    <DiscoveredResourceCard key={resource.id} resource={resource}>
+                                        {renderActions && renderActions(resource)}
+                                    </DiscoveredResourceCard>
+                                ))}
+                            </div>
                         ))}
                     </div>
                 </div>
-            )}
 
+            )}
             {/* Doublons détectés */}
-            {duplicates.length > 0 && (
+            {sortedDuplicates.length > 0 && (
                 <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-red-600 mb-3 flex items-center gap-2">
                         <span>⚠️</span>
                         Doublons possibles ({duplicates.length})
                     </h3>
                     <div className="space-y-4">
-                        {duplicates.map(resource => (
-                            <DiscoveredResourceCard key={resource.id} resource={resource}>
-                                {renderActions && renderActions(resource)}
-                            </DiscoveredResourceCard>
+                        {sortedDuplicates.map(group => (
+                            <div key={group.category}>
+                                <h4 className="text-lg  text-red-900 mb-3 flex items-center gap-2">{group.category}</h4>
+                                {group.resources.map(resource => (
+                                    <DiscoveredResourceCard key={resource.id} resource={resource}>
+                                        {renderActions && renderActions(resource)}
+                                    </DiscoveredResourceCard>
+                                ))}
+                            </div>
                         ))}
                     </div>
                 </div>
+
             )}
         </div>
     )
 }
+
+
+

@@ -973,6 +973,100 @@ async def list_sources(status: Optional[str] = None):
             }
         )
 
+@app.get("/sources/summary")
+async def get_sources_summary(status: Optional[str] = "discovered"):
+    """
+    Statistiques groupées des ressources pour vue synthèse
+    
+    Query params:
+        status: Filtrer par statut (discovered, geo_validated, rag_ready)
+                - "discovered": Pour ValidationPage (validation géographique)
+                - "geo_validated": Pour RAGPrepPage (extraction données)
+                - "rag_ready": Pour RAGReadyPage (vérification finale)
+    
+    Returns:
+        {
+            "success": true,
+            "status_filtered": "discovered",
+            "total_pending": 75,
+            "by_country": {
+                "FR": {"count": 25, "label": "France"},
+                "ES": {"count": 30, "label": "Espagne"}
+            },
+            "by_category": {
+                "procedure_plateforme": 9,
+                "association_locale": 36,
+                "contact_urgence": 30
+            }
+        }
+    """
+    try:
+        adapter = get_api_adapter()
+        workflow_manager = adapter.workflow_manager
+        
+        # Filtrer par statut
+        resources = workflow_manager.get_resources_by_status(status)
+        
+        # Dictionnaire des noms de pays
+        country_labels = {
+            "FR": "France",
+            "ES": "Espagne",
+            "IT": "Italie",
+            "DE": "Allemagne",
+            "PT": "Portugal",
+            "BE": "Belgique",
+            "CH": "Suisse",
+            "LU": "Luxembourg",
+            "MC": "Monaco"
+        }
+        
+        # Grouper par pays
+        by_country = {}
+        for resource_id, resource_data in resources.items():
+            country_code = resource_data.get("country_code", "unknown")
+            if country_code not in by_country:
+                by_country[country_code] = 0
+            by_country[country_code] += 1
+        
+        # Grouper par catégorie
+        by_category = {}
+        for resource_id, resource_data in resources.items():
+            category = resource_data.get("metadata", {}).get("category", "unknown")
+            if category not in by_category:
+                by_category[category] = 0
+            by_category[category] += 1
+        
+        # Formater la réponse avec labels
+        by_country_formatted = {
+            code: {
+                "count": count,
+                "label": country_labels.get(code, code)
+            }
+            for code, count in by_country.items()
+        }
+        
+        return JSONResponse(content={
+            "success": True,
+            "status_filtered": status,
+            "total_pending": len(resources),
+            "by_country": by_country_formatted,
+            "by_category": by_category
+        })
+        
+    except Exception as e:
+        logger.error(f"Erreur get_sources_summary: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "status_filtered": status,
+                "total_pending": 0,
+                "by_country": {},
+                "by_category": {},
+                "error": str(e)
+            }
+        )
+
 @app.get("/sources/{source_id}")
 async def get_source_by_id(source_id: str):
     """
