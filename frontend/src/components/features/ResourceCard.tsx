@@ -1,4 +1,5 @@
 import type { Resource } from '../../services/api'
+import { ExpandableText } from '../ui/ExpandableText'
 
 interface ResourceCardProps {
     resource: Resource
@@ -9,22 +10,27 @@ export function ResourceCard({ resource, children }: ResourceCardProps) {
     return (
         <div className="bg-white rounded-lg shadow-md p-6 mb-4 hover:shadow-lg transition-shadow">
             {/* Header avec nom et badge status */}
-            <div className="flex justify-between items-start mb-3">
+            <div className="flex justify-between items-start">
                 <h3 className="text-lg font-semibold text-gray-900">
                     {resource.name}
                 </h3>
-                {resource.workflow_status && (
-                    <span className="px-3 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
-                        {resource.workflow_status}
-                    </span>
+
+                <span className="px-3 py-1 text-xs font-medium rounded-full bg-purple-100 text-purple-800">
+                    {resource.category}
+                </span>
+            </div>
+            <div className="flex justify-between items-start mb-4">
+                {resource.url && (
+                    <a href={resource.url} target="_blank" rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 text-sm">
+                        🔗 Voir le site officiel ({resource.url})
+                    </a>
                 )}
             </div>
 
             {/* Description */}
             {resource.description && (
-                <p className="text-gray-600 text-sm mb-3 line-clamp-2">
-                    {resource.description}
-                </p>
+                <ExpandableText text={resource.description} maxLength={150} />
             )}
 
             {/* Infos contact */}
@@ -34,14 +40,14 @@ export function ResourceCard({ resource, children }: ResourceCardProps) {
                         🌍 {resource.country}
                     </span>
                 )}
-                {resource.contact_phone && (
+                {resource.phone && (
                     <span className="flex items-center gap-1">
-                        📞 {resource.contact_phone}
+                        📞 {resource.phone}
                     </span>
                 )}
-                {resource.contact_email && (
+                {resource.email && (
                     <span className="flex items-center gap-1">
-                        📧 {resource.contact_email}
+                        📧 {resource.email}
                     </span>
                 )}
             </div>

@@ -246,7 +246,7 @@ class LegacyAPIAdapter:
                 # 🐛 DEBUG: Si aucun pays après filtrage, c'est le BUG !
                 if len(countries_config) == 0:
                     print(f"❌ ERREUR: Aucun pays après filtrage !")
-                    logger.error(f"❌ ERREUR: Aucun pays après filtrage ! countries={countries}, mapped={mapped_countries}")
+                    logger.error(f"❌ ERREUR: Aucun pays après filtrage ! countries={countries}, requested_codes={requested_codes}")
             
             print(f"\n=== DEBUT TRAITEMENT: {len(countries_config)} pays à traiter ===\n")
             print(f"🎯 Objectif: {max_resources} ressources à découvrir\n")
@@ -254,6 +254,9 @@ class LegacyAPIAdapter:
             
             for country_idx, country in enumerate(countries_config):
                 print(f"🔄 Boucle pays {country_idx + 1}/{len(countries_config)}: {country['name']}")
+                
+                # ✅ FIX CRITIQUE: Réinitialiser le compteur PAR PAYS pour avoir max_per_category ressources PAR PAYS
+                discovered_count = 0
                 
                 # ✅ FIX: Répéter l'appel LLM jusqu'à atteindre max_resources
                 # Au lieu de limiter à 1 terme, on boucle jusqu'à avoir assez de ressources
@@ -339,7 +342,10 @@ class LegacyAPIAdapter:
                                 
                                 if not is_duplicate:
                                     # Ajouter au workflow
-                                    self.workflow_manager.add_discovered_resource(resource_id, resource_data)
+                                    self.workflow_manager.add_discovered_resource_with_category(
+                                        resource_id,
+                                        resource_data,
+                                        category=category)
                                     
                                     # ✅ PHASE 1.5: Capturer AVANT que la validation ne change le status
                                     newly_discovered.append({
@@ -1533,8 +1539,13 @@ Email: [email if available, otherwise leave blank]"""
                                         continue
                                 
                                 # Ajouter au workflow
-                                self.workflow_manager.add_discovered_resource(resource_id, resource_data)
+                                self.workflow_manager.add_discovered_resource_with_category(
+                                    resource_id, 
+                                    resource_data,
+                                    category="procedure_plateforme"
+                                    )
                                 
+                                self.validation_system.start_geographic_validation(resource_id)
                                 # Ajouter à la liste des découvertes
                                 discovered_resources.append({
                                     "id": resource_id,

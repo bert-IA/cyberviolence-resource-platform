@@ -1,0 +1,25 @@
+Modification de la logique métier du backend
+
+Les besoins : trois type de données
+1) Service_support : qui regroue des supports à l'échelle nationale d'aide aux mineures confronté à de la cyberviolence.
+    cela peut s'étendre à toute forme de violence même hors intenet.
+    Pour chaque support il faut 
+        - un descriptif du service proposé
+        - un périmètre d'intervention (quel publique mineurs ou pas,  quel problème harcèlement cyberviolence, anonyme ou pas)
+        - une modalité de contact (télépone, mail, formulaire ....)
+        -  un lien disponible sur la page contact ou aide qui permette d'accéder directement au formulaire ou au téléphone en cas de besoin
+en pririté on souhaite privilégié les services gouvernemntaux
+
+2) procedure_plateforme : source officiel des plateofrme des réseaux sociaux
+        - on veut les procédure officilele pour pour gérer les profils, 
+        action à faire en cas de problème sur le réseau, 
+    il ne faut pas se contenter des plateformes classiques mais aussi aller vers les apli de dialogue discord entre jeunes
+
+3) Signalement autorité : source officiel des autorité légale que l'on peut contacter en cas de cyber violence ou étendu à de la violence
+Pour chaque autorité  il faut 
+        - un descriptif du service proposé
+        - un périmètre d'intervention (quel publique mineurs ou pas,  quel problème harcèlement cyberviolence, anonyme ou pas, toute violence ou pas )
+        - une modalité de contact
+        - les informations précise de contact teléphone mail ....
+
+

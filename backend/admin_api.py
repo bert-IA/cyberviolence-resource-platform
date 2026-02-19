@@ -941,15 +941,17 @@ async def list_sources(status: Optional[str] = None):
                 "name": resource_data.get("name", ""),
                 "title": resource_data.get("name", ""),  # Alias pour compatibilité
                 "description": resource_data.get("description", ""),
-                "url": resource_data.get("url", ""),
+                "url": resource_data.get("website", ""),
                 "organization": resource_data.get("organization", ""),
                 "country": resource_data.get("country", ""),
+                "country_code": resource_data.get("country_code", ""),
                 "region": resource_data.get("region", ""),
+                "category": resource_data.get("metadata", {}).get("category", ""),
                 "status": resource_data.get("workflow_status", ""),
                 "workflow_status": resource_data.get("workflow_status", ""),
                 "created_at": resource_data.get("created_at", ""),
-                "contact_phone": resource_data.get("contact_phone", ""),
-                "contact_email": resource_data.get("contact_email", ""),
+                "phone": resource_data.get("phone", ""),
+                "email": resource_data.get("email", ""),
                 "contact_url": resource_data.get("contact_url", ""),
                 "languages": resource_data.get("languages", []),
                 "target_audience": resource_data.get("target_audience", [])
@@ -1017,7 +1019,11 @@ async def get_sources_summary(status: Optional[str] = "discovered"):
             "BE": "Belgique",
             "CH": "Suisse",
             "LU": "Luxembourg",
-            "MC": "Monaco"
+            "MC": "Monaco",
+            "AU": "Australie",
+            "CA": "Canada",
+            "US": "États-Unis",
+            "GB": "Royaume-Uni"
         }
         
         # Grouper par pays

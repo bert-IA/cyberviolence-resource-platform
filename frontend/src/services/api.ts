@@ -8,14 +8,16 @@ export interface Resource {
     id: string
     name: string
     title: string
+    category: string
     description: string
     url: string
     organization: string
     country: string
+    country_code: string  // Code pays (AU, BE, FR, etc.)
     region: string
     status: string
-    contact_phone: string
-    contact_email: string
+    phone: string
+    email: string
     contact_url: string
     languages: string[]
     target_audience: string[]

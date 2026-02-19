@@ -1,18 +1,26 @@
-import { useReducer } from "react"
-type validationStep = 'overwiew' | 'review'
+import { useReducer, type Dispatch } from "react"
+
+export interface ValidationStepProps {
+    state: ValidationState
+    dispatch: Dispatch<ValidationAction>
+}
+
+type validationStep = 'overview' | 'review'
 
 type FilterType = {
     country?: string
     category?: string
 }
 
-type ValidationState = {
+export type ValidationState = {
     step: validationStep
     filter: FilterType
     selectedIds: String[]
     groupBy: 'country' | 'category' | 'all'
 }
-type ValidationAction =
+
+// 🆕 Export pour utilisation dans d'autres composants
+export type ValidationAction =
     | { type: 'SELECT_COUNTRY'; country: string }
     | { type: 'SELECT_CATEGORY'; category: string }
     | { type: 'SHOW_ALL' }

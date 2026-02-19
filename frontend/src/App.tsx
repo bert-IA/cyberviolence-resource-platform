@@ -4,6 +4,7 @@ import { MainLayout } from './components/layout/MainLayout'
 import { MenuPage } from './pages/MenuPage'
 import { ConfigurationPage } from './pages/ConfigurationPage'
 import { DiscoveryPage } from './pages/DiscoveryPage'
+import { ValidationPage } from './pages/ValidationPage/Index'
 import { NotFound } from './pages/NotFound'
 import { Toaster } from 'react-hot-toast'
 
@@ -33,6 +34,7 @@ export function App() {
           <Route path="/" element={<MenuPage />} />
           <Route path="/configuration" element={<ConfigurationPage />} />
           <Route path="/decouverte" element={<DiscoveryPage />} />
+          <Route path="/validation" element={<ValidationPage />} />
 
           {/* Pages futures (décommente quand prêt) */}
           {/* <Route path="/validation" element={<ValidationPage />} /> */}
