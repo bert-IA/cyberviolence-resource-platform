@@ -8,7 +8,7 @@ import type { ValidationStepProps } from '../../hooks/useValidationWorkflow'
 export function ReviewStep({ state, dispatch }: ValidationStepProps) {
     // 1️⃣ Charger TOUTES les ressources discovered
     const resources = useResources('geo_pending')
-    console.log('Resources data:', resources.data)
+
 
 
     // 2️⃣ Hook validation batch

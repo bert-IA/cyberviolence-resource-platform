@@ -40,14 +40,14 @@ export function ValidationPageExample({ resources }: { resources: DiscoveredReso
 
     const handleApprove = (resourceId: string) => {
         validateBatch.mutate({
-            source_ids: [resourceId],
+            resource_ids: [resourceId],
             action: 'approve'
         })
     }
 
     const handleReject = (resourceId: string) => {
         validateBatch.mutate({
-            source_ids: [resourceId],
+            resource_ids: [resourceId],
             action: 'reject'
         })
     }
