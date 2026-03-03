@@ -4,38 +4,36 @@ export const AUTH_TOKEN = 'Bearer admin-token-2024'
 // Ressource complète (utilisée pour /sources, validation, etc.)
 // === INTERFACES ===
 
-export interface Resource {
+interface BaseResource {
     id: string
-    name: string
-    title: string
-    category: string
+    organization_name: string
+    website: string
+    direct_link: string
     description: string
-    url: string
-    organization: string
-    country: string
-    country_code: string  // Code pays (AU, BE, FR, etc.)
-    region: string
-    status: string
-    phone: string
-    email: string
-    contact_url: string
-    languages: string[]
-    target_audience: string[]
-    workflow_status: string
+    category: string
+    scope_audience?: string
+    scope_violence?: string
+    scope_anonymous: boolean
+    is_governmental?: boolean
+    country_name: string
+    country_code: string
+    language: string
+    phone?: string
 }
 
-// Ressource découverte (structure simplifiée retournée par /geographic/discover)
-export interface DiscoveredResource {
-    id: string
-    name: string
-    country: string
-    phone: string
-    email: string
+export interface Resource extends BaseResource {
+    status: string
+    workflow_status: string
+    is_new?: boolean | null
+    scope_signalement?: string
+    action_type?: string
+}
+
+export interface DiscoveredResource extends BaseResource {
     confidence: number
-    category: string
-    description: string
     is_new: boolean
     duplicate_reason?: string
+
 }
 
 export interface DiscoveryFilters {
@@ -91,6 +89,9 @@ export interface ResourceStats {
         [category: string]: number
     }
 }
+
+
+
 
 // ============================================
 // Fonctions API - Discovery
