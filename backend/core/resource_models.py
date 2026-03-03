@@ -8,14 +8,19 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass, asdict
 
 class ResourceCategory(Enum):
-    """4 catégories cibles minimales selon la stratégie lean"""
-    CONTACT_URGENCE = "contact_urgence"           # 📞 Numéros directs d'aide
-    PROCEDURE_PLATEFORME = "procedure_plateforme" # 🛠️ Steps signalement/blocage  
-    SIGNALEMENT_AUTORITE = "signalement_autorite" # ⚖️ Procédures officielles
-    ASSOCIATION_LOCALE = "association_locale"     # 🏢 Aide professionnelle locale
-    
-    # Maintien de la compatibilité avec l'existant
-    SERVICES_SUPPORT = "services_support"         # 🤝 Existant (généraliste)
+    """3 catégories cibles V2 selon la stratégie lean
+
+    V2 — SERVICE_SUPPORT remplace contact_urgence + association_locale.
+    CONTACT_URGENCE conservé comme alias de rétrocompatibilité.
+    """
+    # ── Catégories V2 actives ─────────────────────────────────────────────────
+    SERVICE_SUPPORT      = "service_support"       # 🛡️ Services d'assistance nationaux
+    PROCEDURE_PLATEFORME = "procedure_plateforme"  # 🛠️ Procédures des plateformes numériques
+    SIGNALEMENT_AUTORITE = "signalement_autorite"  # ⚖️ Autorités légales officielles
+
+    # ── Alias V1 conservés pour rétrocompatibilité (ne pas utiliser en V2) ───
+    CONTACT_URGENCE = "contact_urgence"            # → fusionné dans SERVICE_SUPPORT
+    SERVICES_SUPPORT = "services_support"          # → fusionné dans SERVICE_SUPPORT
 
 class UrgencyLevel(Enum):
     """Niveau d'urgence pour prioriser les ressources"""
@@ -64,15 +69,23 @@ class ResourceMetadata:
     test_status: TestStatus = TestStatus.NOT_TESTED
     
     # Métadonnées optionnelles spécialisées
-    platform_name: Optional[str] = None          # Pour PROCEDURE_PLATEFORME
-    authority_name: Optional[str] = None          # Pour SIGNALEMENT_AUTORITE
-    specialization: Optional[str] = None          # Pour ASSOCIATION_LOCALE
-    service_scope: Optional[str] = None           # Portée géographique
-    
+    platform_name: Optional[str] = None           # Pour PROCEDURE_PLATEFORME
+    authority_name: Optional[str] = None           # Pour SIGNALEMENT_AUTORITE
+    service_scope: Optional[str] = None            # Portée géographique
+
+    # ── Champs V2 ─────────────────────────────────────────────────────────────
+    direct_link: str = ""                          # Lien direct formulaire/aide
+    is_governmental: bool = False                  # Source gouvernementale officielle
+    action_type: str = ""                          # Pour PROCEDURE_PLATEFORME
+                                                   #   ex: signalement, blocage, suppression
+    scope_audience: str = ""                       # Public visé : "mineurs" | "tous"
+    scope_violence: str = ""                       # Type : "cyberviolence" | "tous"
+    scope_anonymous: bool = False                  # Signalement anonyme possible
+
     # Métadonnées de validation
-    last_verified: Optional[str] = None           # Date dernière vérification
-    verification_notes: Optional[str] = None      # Notes de vérification
-    update_frequency: Optional[str] = None        # Fréquence de mise à jour
+    last_verified: Optional[str] = None            # Date dernière vérification
+    verification_notes: Optional[str] = None       # Notes de vérification
+    update_frequency: Optional[str] = None         # Fréquence de mise à jour
     
     def to_dict(self) -> Dict[str, Any]:
         """Conversion en dictionnaire pour JSON"""
@@ -104,51 +117,54 @@ class ResourceMetadata:
         return cls(**data)
 
 class CategoryTargets:
-    """Targets minimaux par pays selon la stratégie lean"""
-    
+    """Targets minimaux par pays selon la stratégie lean V2"""
+
     TARGETS_PER_COUNTRY = {
-        "contacts_urgence": 3,        # 3018 + 2 backup
-        "procedures_plateformes": 6,  # Top 6 plateformes
-        "signalement_autorites": 2,   # Pharos + Cybermalveillance
-        "associations_locales": 5     # 5 principales
+        "service_support":       3,   # Services d'assistance nationaux (gov. prioritaires)
+        "procedure_plateforme":  5,   # Top 5 plateformes (incl. Discord/WhatsApp/Telegram)
+        "signalement_autorite":  4,   # Autorités nationales (PHAROS, Cybermalveillance...)
     }
-    
-    # Total par pays: ~16 ressources (vs 100+ extensive)
+
+    # Total par pays : ~12 ressources ciblées (lean vs 100+ extensive)
     TOTAL_TARGET_PER_COUNTRY = sum(TARGETS_PER_COUNTRY.values())
 
 # Mapping des catégories vers actions utilisateur (pour intégration chatbot future)
 CATEGORY_TO_ACTION_MAPPING = {
-    ResourceCategory.CONTACT_URGENCE: "besoin_aide_immediate",
-    ResourceCategory.PROCEDURE_PLATEFORME: "signaler_contenu", 
+    # V2
+    ResourceCategory.SERVICE_SUPPORT:      "besoin_aide",
+    ResourceCategory.PROCEDURE_PLATEFORME: "signaler_contenu",
     ResourceCategory.SIGNALEMENT_AUTORITE: "porter_plainte",
-    ResourceCategory.ASSOCIATION_LOCALE: "accompagnement_local",
-    ResourceCategory.SERVICES_SUPPORT: "conseils_generaux"  # Existant
+    # V1 — alias rétrocompatibilité
+    ResourceCategory.CONTACT_URGENCE:      "besoin_aide",
+    ResourceCategory.SERVICES_SUPPORT:     "besoin_aide",
 }
 
-# Validation spécialisée par catégorie
+# Critères de validation par catégorie V2
+# Chaque critère est affiché sous forme de checklist dans l'interface admin.
 VALIDATION_CRITERIA_BY_CATEGORY = {
-    ResourceCategory.CONTACT_URGENCE: {
-        "test_appel": "Numéro fonctionnel testé",
-        "statut_officiel": "Confirmé gouvernemental/agréé", 
-        "specialisation": "Confirmé spécialisé cyberviolence",
-        "accessibilite": "Horaires et langue vérifiés"
+    ResourceCategory.SERVICE_SUPPORT: {
+        "statut_officiel":   "Source gouvernementale ou officiellement reconnue",
+        "public_cible":      "Public visé identifié (mineurs / tous)",
+        "direct_link":       "Lien direct vers la page d'aide ou formulaire vérifié",
+        "accessibilite":     "Horaires, langue et modalités de contact vérifiés",
     },
     ResourceCategory.PROCEDURE_PLATEFORME: {
-        "url_valide": "Help center accessible",
-        "procedure_actuelle": "Steps testés manuellement",
-        "mise_a_jour": "Contenu post-2024", 
-        "completude": "Procédure end-to-end fonctionnelle"
+        "url_valide":        "Page d'aide officielle de la plateforme accessible",
+        "procedure_actuelle": "Procédure testée manuellement (post-2024)",
+        "action_type":       "Type d'action identifié (signalement/blocage/suppression)",
+        "completude":        "Procédure end-to-end fonctionnelle",
     },
     ResourceCategory.SIGNALEMENT_AUTORITE: {
-        "site_officiel": "Domaine gouvernemental vérifié",
-        "formulaire_actif": "Formulaire testé et fonctionnel",
-        "competence_juridiction": "Autorité compétente confirmée",
-        "procedure_claire": "Steps de signalement explicites"
+        "site_officiel":         "Domaine gouvernemental vérifié",
+        "formulaire_actif":      "Formulaire ou contact testé et fonctionnel",
+        "competence_juridiction": "Autorité compétente pour la cyberviolence confirmée",
+        "anonymat":              "Possibilité de signalement anonyme documentée",
     },
-    ResourceCategory.ASSOCIATION_LOCALE: {
-        "agrement_verifie": "Agrément officiel confirmé",
-        "specialisation_cyber": "Spécialisée cyberviolence",
-        "zone_geographique": "Zone de couverture vérifiée",
-        "accessibilite": "Contact et disponibilité testés"
-    }
+    # Alias V1 — redirige vers les critères SERVICE_SUPPORT
+    ResourceCategory.CONTACT_URGENCE: {
+        "statut_officiel":   "Source gouvernementale ou officiellement reconnue",
+        "public_cible":      "Public visé identifié (mineurs / tous)",
+        "direct_link":       "Lien direct vers la page d'aide ou formulaire vérifié",
+        "accessibilite":     "Horaires, langue et modalités de contact vérifiés",
+    },
 }

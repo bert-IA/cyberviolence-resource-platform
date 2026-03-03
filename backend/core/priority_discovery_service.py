@@ -81,7 +81,7 @@ DEFAULT_PRIORITY_CONFIG = {
     ),
     
     'guides_communication_parents': PriorityConfig(
-        category='association_locale',
+        category='service_support',
         priority=DiscoveryPriority.IMPORTANT,
         description='Guides dialogue parents-enfants',
         chatbot_usage='Parler aux parents → Ressources communication',
@@ -95,7 +95,7 @@ DEFAULT_PRIORITY_CONFIG = {
     # NIVEAU 3 - OPTIONNEL (Enrichissement selon contexte, trimestrielle)
     # =================================================================
     'associations_cyber_locales': PriorityConfig(
-        category='association_locale',
+        category='service_support',
         priority=DiscoveryPriority.OPTIONAL,
         description='Associations locales cyberharcèlement',
         chatbot_usage='Service support → Accompagnement local',
@@ -106,7 +106,7 @@ DEFAULT_PRIORITY_CONFIG = {
     ),
     
     'procedures_scolaires_cyber': PriorityConfig(
-        category='association_locale',
+        category='service_support',
         priority=DiscoveryPriority.OPTIONAL,
         description='Procédures scolaires cyberharcèlement',
         chatbot_usage='Parler enseignant → Protocoles école',

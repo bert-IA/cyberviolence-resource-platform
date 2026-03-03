@@ -16,15 +16,15 @@ const LANGUAGES = [
 ]
 
 const CATEGORIES = [
-    { value: 'contact_urgence', label: 'Contacts d\'urgence' },
+    { value: 'service_support', label: 'Service d\'aides' },
     { value: 'procedure_plateforme', label: 'Procédures plateformes' },
     { value: 'signalement_autorite', label: 'Signalement autorités' },
-    { value: 'association_locale', label: 'Associations locales' },
+
 ]
 
 export function DiscoveryForm({ onSubmit, loading }: DiscoveryFormProps) {
     const [language, setLanguage] = useState('FR')
-    const [selectedCategories, setSelectedCategories] = useState<string[]>(['contact_urgence'])
+    const [selectedCategories, setSelectedCategories] = useState<string[]>([])
     const [selectedCountries, setSelectedCountries] = useState<string[]>([])
     const [maxPerCategory, setMaxPerCategory] = useState(3)
 

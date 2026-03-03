@@ -1,0 +1,422 @@
+ANALYSE DES REQUÊTES CURL — BACKEND V2
+Rédigé par : GitHub Copilot (formateur Python/FastAPI)
+Date : 20 février 2026
+═══════════════════════════════════════════════════════════════
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MODULE 1 — LA MÉTHODE DE LECTURE D'UN ENDPOINT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Avant d'écrire un curl, il faut lire le code comme un chef-cuisinier
+lit une recette. On cherche 5 informations dans cet ordre :
+
+  #  │ Question                    │ Où la trouver dans le code
+  ───┼─────────────────────────────┼──────────────────────────────────────
+  1  │ Méthode HTTP                │ @router.get / @router.post
+  2  │ Chemin URL                  │ le string entre parenthèses
+  3  │ Auth requise ?              │ présence de Depends(verify_admin_token)
+  4  │ Ce qu'il faut envoyer       │ paramètres de la fonction (query / json)
+  5  │ Ce qu'il va renvoyer        │ les return / JSONResponse dans le corps
+
+
+═══════════════════════════════════════════════════════════════
+ENDPOINT 1 — GET /sources/summary
+Lecture seule, sans authentification
+═══════════════════════════════════════════════════════════════
+
+Fichier : backend/routers/sources.py
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ÉTAPE 1 : Lire la signature
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  @router.get("/sources/summary")
+  async def get_sources_summary(status: Optional[str] = "discovered"):
+
+  Ce qu'on lit :
+    · @router.get        → méthode GET
+    · "/sources/summary" → chemin /sources/summary
+    · Aucun Depends(verify_admin_token) → pas d'auth requise
+    · status: Optional[str] = "discovered"
+                         → query param optionnel, défaut : "discovered"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ÉTAPE 2 : Lire la logique de retour
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  return JSONResponse(content={
+      "success": True,
+      "status_filtered": status,           # echo du paramètre reçu
+      "total_pending": len(resources),     # nombre total de ressources
+      "by_country": by_country_formatted,  # dict code → {count, label}
+      "by_category": by_category           # dict catégorie → count
+  })
+
+  On peut anticiper la réponse avant même d'appeler l'API :
+    · Si status=geo_pending → status_filtered vaudra "geo_pending"
+    · by_category doit contenir les clés V2 :
+        service_support, procedure_plateforme, signalement_autorite
+    · Si on voit encore association_locale ou contact_urgence dans
+      by_category → des ressources V1 sont encore en base (normal,
+      mais confirme que la migration est incomplète)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ÉTAPE 3 : Construire les curls
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Règle : un @router.get avec query params → les paramètres vont
+  dans l'URL après le symbole ?
+
+  # Cas 1 — valeur par défaut (status=discovered)
+  curl -s http://localhost:8000/sources/summary | python3 -m json.tool
+
+  # Cas 2 — statut différent
+  curl -s "http://localhost:8000/sources/summary?status=geo_pending" \
+    | python3 -m json.tool
+
+  Légende :
+    -s                   → silent (pas de barre de progression)
+    | python3 -m json.tool → formate le JSON pour le lire facilement
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ÉTAPE 4 : Réponse attendue
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  {
+      "success": true,
+      "status_filtered": "discovered",
+      "total_pending": 12,
+      "by_country": {
+          "FR": { "count": 5, "label": "France" },
+          "BE": { "count": 3, "label": "Belgique" }
+      },
+      "by_category": {
+          "service_support": 4,
+          "procedure_plateforme": 5,
+          "signalement_autorite": 3
+      }
+  }
+
+  Lien avec l'objectif V2 :
+    Le champ by_category permet de vérifier visuellement que les
+    catégories V2 (service_support, procedure_plateforme,
+    signalement_autorite) remontent bien depuis le backend.
+
+
+═══════════════════════════════════════════════════════════════
+ENDPOINT 2 — POST /sources/validate
+Écriture, authentification obligatoire
+═══════════════════════════════════════════════════════════════
+
+Fichier : backend/routers/sources.py
+Cet endpoint est le cœur du workflow de validation critique.
+Il est plus complexe : plusieurs chemins de code, auth, corps JSON.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ÉTAPE 1 : Lire la signature
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  @router.post("/sources/validate")
+  async def validate_critical_source(
+      request: Request,
+      admin_id: str = Depends(verify_admin_token)   # ← AUTH !
+  ):
+
+  Ce qu'on lit :
+    · @router.post → méthode POST
+    · Depends(verify_admin_token) → token Bearer obligatoire dans le header
+    · request: Request + data = await request.json()
+                              → le corps est du JSON brut
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ÉTAPE 2 : Lire ce que le corps JSON doit contenir
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  data = await request.json()
+  source_id           = data.get("source_id")             # OBLIGATOIRE
+  action              = data.get("action")                 # OBLIGATOIRE
+  modifications       = data.get("modifications")          # optionnel
+  criteria_checks     = data.get("criteria_checks", {})   # optionnel
+  auto_transition_rag = data.get("auto_transition_rag", False) # optionnel
+
+  if not source_id or not action:
+      raise HTTPException(status_code=400, detail="source_id et action requis")
+
+  Champs obligatoires : source_id + action
+  Actions possibles   : "validate_critical", "reject"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ÉTAPE 3 : Anticiper les 3 chemins de réponse
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Chemin A (400) → source_id ou action manquant
+  Chemin B (400) → criteria_checks incomplets
+  Chemin C (200) → validation réussie
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ÉTAPE 4 : Construire les curls
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Construire l'en-tête auth :
+    verify_admin_token lit le header "Authorization: Bearer <token>".
+    Le token est dans backend/constants.py → ADMIN_TOKEN_DEV.
+
+  # 0 — Vérifier le token dans constants.py
+  grep ADMIN_TOKEN_DEV backend/constants.py
+
+
+  # Chemin A — déclencher le 400 "champs manquants" (sans action)
+  curl -s -X POST http://localhost:8000/sources/validate \
+    -H "Authorization: Bearer <TON_TOKEN>" \
+    -H "Content-Type: application/json" \
+    -d '{"source_id": "abc123"}' \
+    | python3 -m json.tool
+
+  Réponse attendue :
+    {"detail": "source_id et action requis"}
+
+
+  # Chemin A-bis — déclencher le 401 (sans token du tout)
+  curl -s -X POST http://localhost:8000/sources/validate \
+    -H "Content-Type: application/json" \
+    -d '{"source_id": "abc123", "action": "validate_critical"}' \
+    | python3 -m json.tool
+
+  Réponse attendue :
+    {"detail": "Not authenticated"}   ← confirme que l'auth fonctionne
+
+
+  # Chemin C — validation minimale (sans criteria_checks)
+  # Étape 1 : récupérer un vrai source_id en critical_pending
+  curl -s "http://localhost:8000/sources/summary?status=critical_pending" \
+    | python3 -m json.tool
+
+  # Étape 2 : lire la liste des sources
+  curl -s "http://localhost:8000/sources?status=critical_pending" \
+    | python3 -c "
+  import sys, json
+  d = json.load(sys.stdin)
+  for s in d.get('sources', [])[:3]:
+      print(s.get('id'), '|', s.get('name'))
+  "
+
+  # Étape 3 : valider avec l'id récupéré
+  curl -s -X POST http://localhost:8000/sources/validate \
+    -H "Authorization: Bearer <TON_TOKEN>" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "source_id": "<ID_RÉCUPÉRÉ>",
+      "action": "validate_critical"
+    }' \
+    | python3 -m json.tool
+
+  Réponse attendue (succès) :
+    {
+        "success": true,
+        "message": "Source validée avec succès",
+        "data": {
+            "source_id": "<ID_RÉCUPÉRÉ>",
+            "new_status": "critical_validated"
+        }
+    }
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CE QUE CETTE MÉTHODE T'APPREND À TESTER SUR TOUTE L'API
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Cas à tester systématiquement          │ Comment
+  ───────────────────────────────────────┼──────────────────────────────────
+  Auth absente                           │ retirer le header Authorization
+                                         │ → doit retourner 401
+  Auth invalide                          │ mettre un mauvais token
+                                         │ → doit retourner 401/403
+  Champ obligatoire manquant             │ retirer source_id ou action
+                                         │ → doit retourner 400
+  Mauvais statut de ressource            │ envoyer un source_id pas en
+                                         │ critical_pending → lire le message
+  Happy path                             │ corps complet, ressource au bon
+                                         │ statut → 200 avec success: true
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EXERCICE PRATIQUE — ORDRE D'EXÉCUTION RECOMMANDÉ
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Lancer depuis le dossier racine du projet.
+  Démarrer le serveur au préalable : cd backend && ./start_server.sh
+
+  # 1 — Vérifier que le serveur répond
+  curl -s http://localhost:8000/health | python3 -m json.tool
+
+  # 2 — Valider que les catégories V2 remontent
+  curl -s "http://localhost:8000/sources/summary?status=discovered" \
+    | python3 -m json.tool
+
+  # 3 — Tester le 401 sur /validate (sans token)
+  #     → confirme que le correctif d'authentification fonctionne
+  curl -s -X POST http://localhost:8000/sources/validate \
+    -H "Content-Type: application/json" \
+    -d '{"source_id": "test", "action": "validate_critical"}' \
+    | python3 -m json.tool
+
+  Résultat attendu étape 3 : {"detail": "Not authenticated"}
+
+
+═══════════════════════════════════════════════════════════════
+CAS D'USAGE — TESTER LA DÉCOUVERTE SANS LANCER LE FRONTEND
+Simuler une recherche de ressources : 3 catégories × 2 pays
+═══════════════════════════════════════════════════════════════
+
+BESOIN
+──────
+  Le frontend (interface React) déclenche la découverte via des
+  clics dans l'UI. Mais pendant le développement ou le debug,
+  on veut pouvoir :
+    · vérifier que le LLM répond correctement
+    · valider que les 3 catégories V2 sont bien traitées
+    · contrôler les données brutes avant qu'elles passent
+      par le composant ResourceCard
+
+  Solution : appeler directement les endpoints de découverte
+  avec curl. Le backend est complètement indépendant du frontend.
+  Les ressources découvertes sont sauvegardées dans
+  working_resources.json — accessibles ensuite via /sources.
+
+  ⚠️  Attention : ces endpoints appellent réellement le LLM
+     (Gemini/OpenRouter). Chaque appel consomme du quota API.
+     En développement, préférer max_resources_per_country = 1
+     pour limiter les coûts.
+
+ANALYSE DE L'ENDPOINT À UTILISER
+──────────────────────────────────
+  Trois endpoints de découverte existent (discovery.py) :
+
+  Endpoint                              │ Usage
+  ──────────────────────────────────────┼──────────────────────────────
+  POST /discover-by-category/{category} │ 1 catégorie × 1 pays
+  POST /discover-batch/                 │ 1 catégorie × N pays
+       category-multi-countries         │
+  POST /discover-batch/                 │ N catégories × N pays
+       language-complete                │ ← OPTIMAL pour notre besoin
+
+  Pour 3 catégories × 2 pays → 1 seul appel à language-complete.
+  Sinon il faudrait 6 appels séparés.
+
+SIGNATURE DE L'ENDPOINT CHOISI
+────────────────────────────────
+  @router.post("/discover-batch/language-complete")
+  async def discover_language_complete(
+      request: Request,
+      admin_id: str = Depends(verify_admin_token)  # AUTH requise
+  ):
+
+  Corps JSON attendu :
+    language       : "FR"                          # OBLIGATOIRE
+    country_codes  : ["FR", "BE"]                  # OBLIGATOIRE
+    categories     : ["service_support",           # optionnel
+                      "procedure_plateforme",       # (défaut = les 3 V2)
+                      "signalement_autorite"]
+
+TOKEN
+──────
+  Token de dev défini dans backend/constants.py :
+    ADMIN_TOKEN_DEV = "admin-token-2024"
+
+  En production, ce token doit être dans une variable d'environnement
+  et ne jamais apparaître dans le code source versionné.
+
+
+LES CURLS
+──────────
+
+  # ── Étape 0 : vérifier l'état initial (avant découverte) ─────────
+  curl -s "http://localhost:8000/sources/summary?status=discovered" | jq
+
+  # On note total_pending et by_category pour comparer après.
+
+
+  # ── Étape 1 : découverte 3 catégories × 2 pays (mode économique) ─
+  # Version économique : 1 ressource par pays (recommandé pour les tests)
+  curl -s -X POST http://localhost:8000/discover-batch/language-complete \
+    -H "Authorization: Bearer admin-token-2024" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "language": "FR",
+      "country_codes": ["FR", "BE"],
+      "categories": [
+        "service_support",
+        "procedure_plateforme",
+        "signalement_autorite"
+      ],
+      "max_resources_per_country": 1
+    }' | jq
+
+  # Version complète : cibles lean V2 (3/5/4 selon catégorie)
+  # → retirer max_resources_per_country ou mettre une valeur plus haute
+
+  ⚠️  Cet appel peut prendre 30 à 90 secondes (appels LLM réels).
+     Si le terminal semble bloqué, c'est normal.
+     Avec max_resources_per_country=1 → environ 6 appels LLM au total
+     (3 catégories × 2 pays × 1 ressource).
+
+
+  # ── Étape 2 : vérifier ce qui a été découvert ─────────────────────
+  curl -s "http://localhost:8000/sources/summary?status=discovered" | jq
+
+  # Les champs à observer :
+  #   total_pending    → doit avoir augmenté
+  #   by_country       → doit contenir FR et BE
+  #   by_category      → doit contenir les 3 clés V2
+
+
+  # ── Étape 3 : voir le détail des ressources découvertes ───────────
+  curl -s "http://localhost:8000/sources?status=discovered" \
+    | jq '.sources[:2]'
+  # [:2] → affiche seulement les 2 premières pour ne pas surcharger
+
+  # Champs V2 à vérifier dans chaque ressource :
+  #   direct_link     → lien direct vers page d'aide (non vide ?)
+  #   is_governmental → booléen (true pour service_support officiel ?)
+  #   scope_audience  → "mineurs" ou "tous"
+  #   platform_name   → non vide pour procedure_plateforme
+  #   action_type     → "signalement", "blocage"... pour procedure_plateforme
+
+
+RÉPONSE ATTENDUE (structure)
+─────────────────────────────
+  {
+      "success": true,
+      "message": "Découverte lean complète pour FR",
+      "data": {
+          "FR": {
+              "service_support":      { "discovered": 3, "resources": [...] },
+              "procedure_plateforme": { "discovered": 5, "resources": [...] },
+              "signalement_autorite": { "discovered": 4, "resources": [...] }
+          },
+          "BE": {
+              "service_support":      { "discovered": 3, "resources": [...] },
+              "procedure_plateforme": { "discovered": 5, "resources": [...] },
+              "signalement_autorite": { "discovered": 4, "resources": [...] }
+          }
+      }
+  }
+
+
+POURQUOI C'EST UNE BONNE APPROCHE DE TEST
+──────────────────────────────────────────
+  ✔ Valide le backend indépendamment du frontend
+    → Si un bug apparaît dans l'UI, on sait s'il vient du back ou du front
+
+  ✔ Inspecte les données brutes
+    → On voit ce que le LLM a réellement retourné, avant tout
+       affichage ou filtrage côté React
+
+  ✔ Reproductible et traçable
+    → Un curl se copie, se partage, se rejoue exactement
+
+  ✔ Contrôle du coût LLM
+    → max_resources_per_country non spécifié → utilise les défauts du code
+       On peut forcer une valeur basse pour un test rapide :
+         "language": "FR", "country_codes": ["FR"], ... + 1 seule catégorie

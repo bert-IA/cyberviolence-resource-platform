@@ -217,13 +217,18 @@ class LLMManager:
             provider=LLMProvider.GEMINI,
             model="gemini-2.5-flash",
             temperature=0.0,
-            max_tokens=1000
+            max_tokens=8192  # gemini-2.5-flash est un modèle "thinking" :
+                             # il consomme des tokens pour raisonner en interne
+                             # AVANT de produire la réponse visible.
+                             # Avec max_tokens=1000 → ~860 tokens de pensée
+                             # + seulement ~140 tokens de réponse → troncature.
+                             # 8192 donne assez de marge pour les deux.
         ),
         LLMProvider.OPENROUTER: LLMConfig(
             provider=LLMProvider.OPENROUTER,
             model="meta-llama/llama-3.2-3b-instruct:free",
             temperature=0.0,
-            max_tokens=1000
+            max_tokens=2000
         ),
     }
     

@@ -6,7 +6,7 @@ export function AppHeader({ userName }: AppHeaderProps) {
 
     return (
         <header className="bg-green-400 shadow-sm border-b border-gray-200">
-            <div className="max-w-7xl mx-auto px-6 py-4">
+            <div className="px-6 py-4">
                 <div className="flex justify-between items-center">
                     {/* Partie gauche : Titre + Navigation */}
                     <div className="flex flex-col gap-4">

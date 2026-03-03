@@ -15,7 +15,7 @@ type FilterType = {
 export type ValidationState = {
     step: validationStep
     filter: FilterType
-    selectedIds: String[]
+    selectedIds: string[]
     groupBy: 'country' | 'category' | 'all'
 }
 

@@ -9,8 +9,6 @@ export function ReviewStep({ state, dispatch }: ValidationStepProps) {
     // 1️⃣ Charger TOUTES les ressources discovered
     const resources = useResources('geo_pending')
 
-
-
     // 2️⃣ Hook validation batch
     const validateBatch = useValidateBatch()
 
@@ -91,7 +89,7 @@ export function ReviewStep({ state, dispatch }: ValidationStepProps) {
     // 🔟 Titre dynamique selon groupBy
     const getTitle = () => {
         if (state.groupBy === 'country') {
-            const countryLabel = filtered[0]?.country || state.filter.country
+            const countryLabel = filtered[0]?.country_name || state.filter.country
             return `🌍 ${countryLabel} (${filtered.length} ressources)`
         }
         if (state.groupBy === 'category') {

@@ -22,164 +22,216 @@ class CategoryPrompts:
         """
         
         prompt_generators = {
-            "contact_urgence": CategoryPrompts._prompt_contact_urgence,
+            # ── V2 ──────────────────────────────────────────────────────
+            "service_support":      CategoryPrompts._prompt_service_support,
             "procedure_plateforme": CategoryPrompts._prompt_procedure_plateforme,
             "signalement_autorite": CategoryPrompts._prompt_signalement_autorite,
-            "association_locale": CategoryPrompts._prompt_association_locale,
-            "services_support": CategoryPrompts._prompt_services_support  # Existant/fallback
+            # ── Alias V1 (rétrocompatibilité) ────────────────────────
+            "contact_urgence":      CategoryPrompts._prompt_service_support,
+            "services_support":     CategoryPrompts._prompt_service_support,
         }
-        
+
         if category not in prompt_generators:
-            raise ValueError(f"Catégorie non supportée: {category}")
+            raise ValueError(
+                f"Catégorie non supportée: '{category}'. "
+                f"Catégories valides: {list(prompt_generators.keys())}"
+            )
         
-        return prompt_generators[category](country, language, **kwargs)
+        prompt = prompt_generators[category](country, language, **kwargs)
+
+        # Ajout du bloc d'exclusion si des ressources ont déjà été trouvées
+        exclude_orgs = kwargs.get("exclude_orgs", [])
+        if exclude_orgs:
+            org_list = ", ".join(exclude_orgs)
+            exclusion_map = {
+                "FR": f"\n\n⛔ ÉVITE ABSOLUMENT ces ressources déjà trouvées : {org_list}",
+                "EN": f"\n\n⛔ ABSOLUTELY AVOID these already found resources: {org_list}",
+                "ES": f"\n\n⛔ EVITA ABSOLUTAMENTE estos recursos ya encontrados: {org_list}",
+                "IT": f"\n\n⛔ EVITA ASSOLUTAMENTE queste risorse già trovate: {org_list}",
+                "DE": f"\n\n⛔ VERMEIDE UNBEDINGT diese bereits gefundenen Ressourcen: {org_list}",
+                "PT": f"\n\n⛔ EVITE ABSOLUTAMENTE estes recursos já encontrados: {org_list}",
+            }
+            prompt += exclusion_map.get(language, exclusion_map["EN"])
+
+        return prompt
     
     # =================================================================
-    # 📞 CONTACT URGENCE - Numéros directs, pas de conseils généraux
+    # �️ SERVICE SUPPORT - Services d'assistance nationaux (V2)
+    #    Remplace : contact_urgence + services_support (V1)
     # =================================================================
-    
+
     @staticmethod
-    def _prompt_contact_urgence(country: str, language: str, **kwargs) -> str:
-        """Prompt pour découverte de contacts d'urgence spécialisés"""
+    def _prompt_service_support(country: str, language: str, **kwargs) -> str:
+        """Prompt V2 : services d'assistance nationaux contre la cyberviolence.
+
+        Plus large que contact_urgence (V1) : inclut services hors urgences,
+        plateformes d'aide, numéros gratuits, formulaires en ligne.
+        Priorise les sources gouvernementales (is_governmental=true).
+        Demande scope_audience, scope_violence, scope_anonymous, direct_link.
+        """
         
         prompts = {
-            "FR": f"""Trouve UNIQUEMENT les numéros d'urgence OFFICIELS pour cyberharcèlement en {country}.
+            "FR": f"""Trouve des services d'assistance OFFICIELS contre la cyberviolence en {country}.
 
-CRITÈRES STRICTS:
-- Numéros gratuits gouvernementaux ou associations agréées
-- Services 24h/7j si possible  
-- Spécialisés cyberviolence/cyberharcèlement (PAS généralistes)
-- Contact direct, pas site web général
-- Évite les associations d'aide générale
+CRITÈRES STRICTS :
+- Priorité absolue aux services gouvernementaux ou officiellement reconnus
+- Spécialisés cyberviolence, cyberharcèlement, ou violence (y compris hors internet)
+- Accessibles aux mineurs ET/OU au grand public
+- Contact direct : numéro, formulaire, chat — pas un site institutionnel générique
+- Inclure services 24h, horaires bureau, et plateformes en ligne
 
-SOURCES PRIORITAIRES à vérifier:
-- Numéros nationaux courts (3018, 116 xxx)
-- Services gouvernementaux spécialisés
-- Hotlines cybercriminalité/cyberviolence
-- Services jeunesse spécialisés
+SOURCES PRIORITAIRES :
+- Numéros nationaux courts (3018, 116 111, 116 000...)
+- Services gouvernementaux spécialisés (ex: e-Enfance, Net Écoute)
+- Plateformes d'aide en ligne gouvernementales
+- Hotlines spécialisées cyberviolence jeunesse
 
-Réponds UNIQUEMENT sous ce format exact:
+Réponds UNIQUEMENT sous ce format exact :
 Nom: [Service officiel exact]
-Numéro: [Numéro gratuit exact] 
-Description: [Spécialisation cyberharcèlement en 1-2 phrases]
+URL: [Site officiel]
+LienDirect: [URL directe vers la page d'aide ou formulaire de contact]
+Description: [Service proposé en 1-2 phrases]
+Telephone: [Numéro si disponible, sinon vide]
 Horaires: [Disponibilité précise]
-Autorité: [Ministère/organisme de tutelle]
-URL: [Site officiel si disponible]""",
+PublicVise: [mineurs | tous]
+TypeViolence: [cyberviolence | tous]
+SignalementAnonyme: [oui | non]
+SourceGouvernementale: [oui | non]""",
 
-            "EN": f"""Find ONLY OFFICIAL emergency numbers for cyberbullying in {country}.
+            "EN": f"""Find OFFICIAL assistance services against cyberviolence in {country}.
 
 STRICT CRITERIA:
-- Free government numbers or certified associations
-- 24/7 services if possible
-- Specialized in cyberviolence/cyberbullying (NOT general help)
-- Direct contact, not general website
-- Avoid general support associations
+- Absolute priority to government or officially recognized services
+- Specialized in cyberviolence, cyberbullying, or violence (including offline)
+- Accessible to minors AND/OR general public
+- Direct contact: phone number, form, chat — not a generic institutional website
+- Include 24h services, office hours, and online platforms
 
-PRIORITY SOURCES to check:
-- National short numbers (similar to 3018, 116 xxx)
+PRIORITY SOURCES:
+- National short numbers (3018, 116 111, 116 000...)
 - Specialized government services
-- Cybercrime/cyberviolence hotlines
-- Specialized youth services
+- Government online help platforms
+- Youth cyberviolence hotlines
 
 Answer ONLY in this exact format:
 Name: [Exact official service]
-Number: [Exact free number]
-Description: [Cyberbullying specialization in 1-2 sentences]  
+URL: [Official website]
+DirectLink: [Direct URL to help page or contact form]
+Description: [Service offered in 1-2 sentences]
+Phone: [Number if available, otherwise empty]
 Hours: [Precise availability]
-Authority: [Ministry/supervising organization]
-URL: [Official website if available]""",
+Audience: [minors | all]
+ViolenceType: [cyberviolence | all]
+Anonymous: [yes | no]
+Governmental: [yes | no]""",
 
-            "ES": f"""Encuentra ÚNICAMENTE números de urgencia OFICIALES para ciberacoso en {country}.
+            "ES": f"""Encuentra servicios de asistencia OFICIALES contra la ciberviolencia en {country}.
 
 CRITERIOS ESTRICTOS:
-- Números gratuitos gubernamentales o asociaciones certificadas
-- Servicios 24h/7días si es posible
-- Especializados en ciberviolencia/ciberacoso (NO generalistas)
-- Contacto directo, no sitio web general
-- Evita asociaciones de ayuda general
+- Prioridad absoluta a servicios gubernamentales o reconocidos oficialmente
+- Especializados en ciberviolencia, ciberacoso o violencia (incluso fuera de internet)
+- Accesibles a menores Y/O público general
+- Contacto directo: número, formulario, chat — no sitio institucional genérico
+- Incluir servicios 24h, horario de oficina y plataformas en línea
 
-FUENTES PRIORITARIAS a verificar:
-- Números nacionales cortos (tipo 3018, 116 xxx)
+FUENTES PRIORITARIAS:
+- Números nacionales cortos (tipo 3018, 116 111...)
 - Servicios gubernamentales especializados
-- Líneas directas cibercrimen/ciberviolencia
-- Servicios juveniles especializados
+- Plataformas de ayuda en línea gubernamentales
+- Líneas de atención ciberviolencia juvenil
 
 Responde ÚNICAMENTE en este formato exacto:
 Nombre: [Servicio oficial exacto]
-Número: [Número gratuito exacto]
-Descripción: [Especialización ciberacoso en 1-2 frases]
+URL: [Sitio oficial]
+EnlaceDirecto: [URL directa a la página de ayuda o formulario]
+Descripción: [Servicio ofrecido en 1-2 frases]
+Teléfono: [Número si disponible, si no vacío]
 Horarios: [Disponibilidad precisa]
-Autoridad: [Ministerio/organismo supervisor]
-URL: [Sitio oficial si disponible]""",
+Público: [menores | todos]
+TipoViolencia: [ciberviolencia | todos]
+Anónimo: [sí | no]
+Gubernamental: [sí | no]""",
 
-            "IT": f"""Trova UNICAMENTE numeri di emergenza UFFICIALI per cyberbullismo in {country}.
+            "IT": f"""Trova servizi di assistenza UFFICIALI contro la cyberviolenza in {country}.
 
 CRITERI RIGOROSI:
-- Numeri gratuiti governativi o associazioni certificate
-- Servizi 24h/7giorni se possibile
-- Specializzati in cyberviolenza/cyberbullismo (NON generici)
-- Contatto diretto, non sito web generale
-- Evita associazioni di aiuto generale
+- Priorità assoluta ai servizi governativi o riconosciuti ufficialmente
+- Specializzati in cyberviolenza, cyberbullismo o violenza (anche offline)
+- Accessibili a minori E/O al pubblico generale
+- Contatto diretto: telefono, modulo, chat — non sito istituzionale generico
+- Includere servizi 24h, orari di ufficio e piattaforme online
 
-FONTI PRIORITARIE da verificare:
-- Numeri nazionali brevi (tipo 3018, 116 xxx)  
+FONTI PRIORITARIE:
+- Numeri nazionali brevi (tipo 116 111, 116 000)
 - Servizi governativi specializzati
-- Hotline cybercrimine/cyberviolenza
-- Servizi giovanili specializzati
+- Piattaforme di aiuto online governative
+- Linee di assistenza cyberviolenza giovani
 
 Rispondi UNICAMENTE in questo formato esatto:
 Nome: [Servizio ufficiale esatto]
-Numero: [Numero gratuito esatto]
-Descrizione: [Specializzazione cyberbullismo in 1-2 frasi]
+URL: [Sito ufficiale]
+LinkDiretto: [URL diretta alla pagina di aiuto o modulo contatto]
+Descrizione: [Servizio offerto in 1-2 frasi]
+Telefono: [Numero se disponibile, altrimenti vuoto]
 Orari: [Disponibilità precisa]
-Autorità: [Ministero/organismo supervisore]
-URL: [Sito ufficiale se disponibile]""",
+Pubblico: [minori | tutti]
+TipoViolenza: [cyberviolenza | tutti]
+Anonimo: [sì | no]
+Governativo: [sì | no]""",
 
-            "DE": f"""Finde NUR OFFIZIELLE Notfallnummern für Cybermobbing in {country}.
+            "DE": f"""Finde OFFIZIELLE Hilfsdienste gegen Cybergewalt in {country}.
 
 STRENGE KRITERIEN:
-- Kostenlose Regierungsnummern oder zertifizierte Vereine
-- 24h/7Tage Service wenn möglich
-- Spezialisiert auf Cybergewalt/Cybermobbing (NICHT allgemein)
-- Direkter Kontakt, nicht allgemeine Website
-- Vermeide allgemeine Hilfsvereine
+- Absolute Priorität für staatliche oder offiziell anerkannte Dienste
+- Spezialisiert auf Cybergewalt, Cybermobbing oder Gewalt (auch offline)
+- Zugänglich für Minderjährige UND/ODER die Allgemeinheit
+- Direkter Kontakt: Telefon, Formular, Chat — keine generische Behördenwebsite
+- 24h-Dienste, Bürozeiten und Online-Plattformen einbeziehen
 
-PRIORITÄRE QUELLEN zu prüfen:
-- Nationale Kurznummern (wie 3018, 116 xxx)
+PRIORITÄRE QUELLEN:
+- Nationale Kurznummern (wie 116 111, 116 000)
 - Spezialisierte Regierungsdienste
-- Cyberkriminalität/Cybergewalt Hotlines
-- Spezialisierte Jugenddienste
+- Staatliche Online-Hilfsplattformen
+- Jugend-Cybergewalt-Hotlines
 
 Antworte NUR in diesem exakten Format:
 Name: [Exakter offizieller Service]
-Nummer: [Exakte kostenlose Nummer]
-Beschreibung: [Cybermobbing-Spezialisierung in 1-2 Sätzen]
+URL: [Offizielle Website]
+DirektLink: [Direkter URL zur Hilfeseite oder Kontaktformular]
+Beschreibung: [Angebotener Service in 1-2 Sätzen]
+Telefon: [Nummer falls verfügbar, sonst leer]
 Zeiten: [Genaue Verfügbarkeit]
-Behörde: [Ministerium/Aufsichtsorgan]
-URL: [Offizielle Website falls verfügbar]""",
+Zielgruppe: [Minderjährige | alle]
+Gewaltart: [Cybergewalt | alle]
+Anonym: [ja | nein]
+Behördlich: [ja | nein]""",
 
-            "PT": f"""Encontre APENAS números de emergência OFICIAIS para cyberbullying em {country}.
+            "PT": f"""Encontre serviços de assistência OFICIAIS contra a ciberviolência em {country}.
 
 CRITÉRIOS RIGOROSOS:
-- Números gratuitos governamentais ou associações certificadas
-- Serviços 24h/7dias se possível
-- Especializados em cyberviolência/cyberbullying (NÃO generalistas)
-- Contacto direto, não site geral
-- Evite associações de ajuda geral
+- Prioridade absoluta a serviços governamentais ou oficialmente reconhecidos
+- Especializados em ciberviolência, cyberbullying ou violência (incluindo offline)
+- Acessíveis a menores E/OU ao público geral
+- Contacto direto: telefone, formulário, chat — não site institucional genérico
+- Incluir serviços 24h, horário de atendimento e plataformas online
 
-FONTES PRIORITÁRIAS a verificar:
-- Números nacionais curtos (tipo 3018, 116 xxx)
+FONTES PRIORITÁRIAS:
+- Números nacionais curtos (tipo 116 111, 116 000)
 - Serviços governamentais especializados
-- Linhas directas cybercrime/cyberviolência
-- Serviços juvenis especializados
+- Plataformas de ajuda online governamentais
+- Linhas de apoio ciberviolência jovens
 
 Responda APENAS neste formato exacto:
 Nome: [Serviço oficial exacto]
-Número: [Número gratuito exacto]
-Descrição: [Especialização cyberbullying em 1-2 frases]
+URL: [Site oficial]
+LinkDirecto: [URL directo para página de ajuda ou formulário]
+Descrição: [Serviço oferecido em 1-2 frases]
+Telefone: [Número se disponível, caso contrário vazio]
 Horários: [Disponibilidade precisa]
-Autoridade: [Ministério/organismo supervisor]
-URL: [Site oficial se disponível]"""
+Público: [menores | todos]
+TipoViolência: [ciberviolência | todos]
+Anónimo: [sim | não]
+Governamental: [sim | não]"""
         }
         
         return prompts.get(language, prompts["EN"])
@@ -193,76 +245,157 @@ URL: [Site oficial se disponível]"""
         """Prompt pour découverte de procédures techniques plateformes"""
         
         platform_name = kwargs.get("platform_name", "toutes plateformes")
-        
+
         prompts = {
             "FR": f"""Trouve les procédures EXACTES de signalement sur {platform_name} mises à jour en 2024/2025.
 
-CRITÈRES STRICTS:
+PLATEFORMES CIBLES (inclure réseaux sociaux ET apps de messagerie jeunesse) :
+Instagram, TikTok, Snapchat, YouTube, Facebook, X/Twitter,
+Discord, WhatsApp, Telegram, BeReal, Twitch
+
+CRITÈRES STRICTS :
 - URLs help center officiels UNIQUEMENT
 - Procédures step-by-step récentes (post-2024)
-- Pas de conseils généraux ou théoriques
-- Screenshots/captures officielles si disponibles
 - Spécifique au cyberharcèlement/cyberviolence
+- Indiquer le type d'action exact : signalement, blocage, suppression de contenu, gestion de profil
 
-SOURCES OFFICIELLES uniquement:
-- Help centers/centres d'aide officiels
-- Documentation de sécurité des plateformes
+SOURCES OFFICIELLES uniquement :
+- Help centers / centres d'aide officiels des plateformes
+- Documentation de sécurité officielle
 - Guides de signalement mis à jour
-- Procédures de modération officielles
 
-Réponds UNIQUEMENT sous ce format exact:
+Réponds UNIQUEMENT sous ce format exact :
 Plateforme: [Nom exact de la plateforme]
-URL: [Lien help center officiel direct]
-Procédure: [Steps 1,2,3... exacts pour signaler cyberharcèlement]
-Délai: [Temps de traitement annoncé par la plateforme]
-Preuves: [Types de preuves demandées]
-Suivi: [Comment suivre le signalement]""",
+URL: [Lien help center officiel]
+LienDirect: [URL directe vers la page spécifique cyberharcèlement]
+Description: [1-2 phrases : ce que cette page permet de faire (signaler, bloquer, paramètres de sécurité, etc.)]
+TypeAction: [signalement | blocage | suppression_contenu | gestion_profil]
+SignalementAnonyme: [oui | non]""",
 
             "EN": f"""Find EXACT reporting procedures on {platform_name} updated in 2024/2025.
+
+TARGET PLATFORMS (include social networks AND youth messaging apps):
+Instagram, TikTok, Snapchat, YouTube, Facebook, X/Twitter,
+Discord, WhatsApp, Telegram, BeReal, Twitch
 
 STRICT CRITERIA:
 - Official help center URLs ONLY
 - Recent step-by-step procedures (post-2024)
-- No general advice or theory
-- Official screenshots/captures if available
 - Specific to cyberbullying/cyberviolence
+- Indicate exact action type: report, block, content removal, profile management
 
 OFFICIAL SOURCES only:
-- Official help centers/support centers
-- Platform security documentation
+- Official platform help centers
+- Official security documentation
 - Updated reporting guides
-- Official moderation procedures
 
 Answer ONLY in this exact format:
 Platform: [Exact platform name]
-URL: [Direct official help center link]
-Procedure: [Exact steps 1,2,3... to report cyberbullying]
-Timeframe: [Processing time announced by platform]
-Evidence: [Types of evidence required]
-Follow-up: [How to track the report]""",
+URL: [Official help center link]
+DirectLink: [Direct URL to cyberbullying-specific page]
+Description: [1-2 sentences: what this page allows you to do (report, block, safety settings, etc.)]
+ActionType: [report | block | content_removal | profile_management]
+Anonymous: [yes | no]""",
 
             "ES": f"""Encuentra procedimientos EXACTOS de denuncia en {platform_name} actualizados en 2024/2025.
+
+PLATAFORMAS OBJETIVO (incluir redes sociales Y apps de mensajería juvenil):
+Instagram, TikTok, Snapchat, YouTube, Facebook, X/Twitter,
+Discord, WhatsApp, Telegram, BeReal, Twitch
 
 CRITERIOS ESTRICTOS:
 - URLs de centros de ayuda oficiales ÚNICAMENTE
 - Procedimientos paso a paso recientes (post-2024)
-- Sin consejos generales o teóricos
-- Capturas/screenshots oficiales si están disponibles
 - Específico para ciberacoso/ciberviolencia
+- Indicar el tipo exacto de acción: denuncia, bloqueo, eliminación de contenido, gestión de perfil
 
 FUENTES OFICIALES únicamente:
-- Centros de ayuda/soporte oficiales
-- Documentación de seguridad de plataformas
+- Centros de ayuda oficiales de las plataformas
+- Documentación de seguridad oficial
 - Guías de denuncia actualizadas
-- Procedimientos de moderación oficiales
 
 Responde ÚNICAMENTE en este formato exacto:
 Plataforma: [Nombre exacto de la plataforma]
-URL: [Enlace directo del centro de ayuda oficial]
-Procedimiento: [Pasos exactos 1,2,3... para denunciar ciberacoso]
-Plazo: [Tiempo de procesamiento anunciado por la plataforma]
-Evidencias: [Tipos de evidencia requerida]
-Seguimiento: [Cómo hacer seguimiento de la denuncia]"""
+URL: [Enlace centro de ayuda oficial]
+EnlaceDirecto: [URL directa a la página específica de ciberacoso]
+Descripción: [1-2 frases: qué permite hacer esta página (denunciar, bloquear, configuración de seguridad, etc.)]
+TipoAcción: [denuncia | bloqueo | eliminación_contenido | gestión_perfil]
+Anónimo: [sí | no]""",
+
+            "IT": f"""Trova le procedure ESATTE di segnalazione su {platform_name} aggiornate nel 2024/2025.
+
+PIATTAFORME TARGET (includere social network E app di messaggistica per giovani):
+Instagram, TikTok, Snapchat, YouTube, Facebook, X/Twitter,
+Discord, WhatsApp, Telegram, BeReal, Twitch
+
+CRITERI RIGOROSI:
+- URL dei centri di aiuto ufficiali UNICAMENTE
+- Procedure step-by-step recenti (post-2024)
+- Specifico per cyberbullismo/cyberviolenza
+- Indicare il tipo esatto di azione: segnalazione, blocco, rimozione contenuto, gestione profilo
+
+FONTI UFFICIALI unicamente:
+- Centri di aiuto/help center ufficiali delle piattaforme
+- Documentazione di sicurezza ufficiale
+- Guide di segnalazione aggiornate
+
+Rispondi UNICAMENTE in questo formato esatto:
+Piattaforma: [Nome esatto della piattaforma]
+URL: [Link help center ufficiale]
+LinkDiretto: [URL diretta alla pagina specifica cyberbullismo]
+Descrizione: [1-2 frasi: cosa permette di fare questa pagina (segnalare, bloccare, impostazioni di sicurezza, ecc.)]
+TipoAzione: [segnalazione | blocco | rimozione_contenuto | gestione_profilo]
+Anonimo: [sì | no]""",
+
+            "DE": f"""Finde GENAUE Meldeverfahren auf {platform_name} aktualisiert in 2024/2025.
+
+ZIEL-PLATTFORMEN (soziale Netzwerke UND Jugend-Messaging-Apps einschließen):
+Instagram, TikTok, Snapchat, YouTube, Facebook, X/Twitter,
+Discord, WhatsApp, Telegram, BeReal, Twitch
+
+STRENGE KRITERIEN:
+- Nur offizielle Hilfecenter-URLs
+- Aktuelle schrittweise Anleitungen (nach 2024)
+- Spezifisch für Cybermobbing/Cybergewalt
+- Genauen Aktionstyp angeben: Meldung, Blockierung, Inhaltsentfernung, Profilverwaltung
+
+NUR OFFIZIELLE QUELLEN:
+- Offizielle Hilfecenter der Plattformen
+- Offizielle Sicherheitsdokumentation
+- Aktualisierte Meldeanleitungen
+
+Antworte NUR in diesem exakten Format:
+Plattform: [Exakter Plattformname]
+URL: [Offizieller Hilfecenter-Link]
+DirekterLink: [Direkter URL zur Cybermobbing-spezifischen Seite]
+Beschreibung: [1-2 Sätze: was diese Seite erlaubt (melden, blockieren, Sicherheitseinstellungen, usw.)]
+Aktionstyp: [meldung | blockierung | inhaltsentfernung | profilverwaltung]
+Anonym: [ja | nein]""",
+
+            "PT": f"""Encontra procedimentos EXATOS de denúncia em {platform_name} atualizados em 2024/2025.
+
+PLATAFORMAS ALVO (incluir redes sociais E apps de mensagens juvenis):
+Instagram, TikTok, Snapchat, YouTube, Facebook, X/Twitter,
+Discord, WhatsApp, Telegram, BeReal, Twitch
+
+CRITÉRIOS RIGOROSOS:
+- URLs de centros de ajuda oficiais UNICAMENTE
+- Procedimentos passo-a-passo recentes (pós-2024)
+- Específico para ciberassédio/ciberviolência
+- Indicar o tipo exato de ação: denúncia, bloqueio, remoção de conteúdo, gestão de perfil
+
+FONTES OFICIAIS unicamente:
+- Centros de ajuda/help centers oficiais das plataformas
+- Documentação de segurança oficial
+- Guias de denúncia atualizados
+
+Responde UNICAMENTE neste formato exato:
+Plataforma: [Nome exato da plataforma]
+URL: [Link do help center oficial]
+LinkDireto: [URL direta para a página específica de ciberassédio]
+Descrição: [1-2 frases: o que esta página permite fazer (denunciar, bloquear, definições de segurança, etc.)]
+TipoAção: [denúncia | bloqueio | remoção_conteúdo | gestão_perfil]
+Anônimo: [sim | não]"""
         }
         
         return prompts.get(language, prompts["EN"])
@@ -276,30 +409,45 @@ Seguimiento: [Cómo hacer seguimiento de la denuncia]"""
         """Prompt pour découverte de signalement aux autorités officielles"""
         
         prompts = {
-            "FR": f"""Trouve les plateformes OFFICIELLES de signalement gouvernemental pour cyberharcèlement en {country}.
+            "FR": f"""Trouve les plateformes OFFICIELLES de signalement aux autorités pour cyberharcèlement en {country}.
 
-CRITÈRES STRICTS:
+EXEMPLES CONNUS (à vérifier et compléter) :
+- France : PHAROS (internet-signalement.gouv.fr), cybermalveillance.gouv.fr, Thémis
+- Belgique : eCops (police.be/fr/internet)
+- Suisse : fedpol.admin.ch
+
+CRITÈRES STRICTS :
 - Sites .gouv ou équivalent officiel UNIQUEMENT
 - Formulaires en ligne fonctionnels et récents
 - Procédures cyberharcèlement spécifiques (pas criminalité générale)
 - Pas d'associations privées ou ONG
-- Authority gouvernementale ou police/justice
+- Autorité gouvernementale ou police/justice
 
-SOURCES GOUVERNEMENTALES prioritaires:
+SOURCES GOUVERNEMENTALES prioritaires :
 - Plateformes police/gendarmerie nationales
 - Ministères Justice/Intérieur
 - Autorités de régulation numérique
 - Services cybercriminalité officiels
 
-Réponds UNIQUEMENT sous ce format exact:
+Réponds UNIQUEMENT sous ce format exact :
 Nom: [Plateforme gouvernementale officielle]
-URL: [Site .gouv ou équivalent officiel]
-Formulaire: [Lien direct vers formulaire cyberharcèlement]
+URL: [Site .gouv ou équivalent officiel — AVEC https://]
+LienDirect: [URL directe vers le formulaire cyberharcèlement — AVEC https://]
+Description: [1-2 phrases : ce que permet de faire cette plateforme]
 Autorité: [Police/Justice/Régulateur responsable]
 Juridiction: [Compétence territoriale]
-Prérequis: [Conditions pour déposer signalement]""",
+ModeSignalement: [formulaire | téléphone | whatsapp | email | application | courrier]
+SignalementAnonyme: [oui | non]
+PublicVise: [mineurs | tous]
+TypeViolence: [cyberviolence | tous]
+SourceGouvernementale: [oui | non]""",
 
             "EN": f"""Find OFFICIAL government reporting platforms for cyberbullying in {country}.
+
+KNOWN EXAMPLES (verify and complete):
+- France: PHAROS (internet-signalement.gouv.fr), cybermalveillance.gouv.fr
+- UK: report.cybercrime.gov.uk, CEOP
+- Germany: BKA online reporting
 
 STRICT CRITERIA:
 - .gov or official equivalent sites ONLY
@@ -316,13 +464,22 @@ PRIORITY GOVERNMENT SOURCES:
 
 Answer ONLY in this exact format:
 Name: [Official government platform]
-URL: [.gov or official equivalent site]
-Form: [Direct link to cyberbullying form]
+URL: [.gov or official equivalent site — WITH https://]
+DirectLink: [Direct URL to cyberbullying form — WITH https://]
+Description: [1-2 sentences: what this platform allows you to do]
 Authority: [Police/Justice/Regulator responsible]
 Jurisdiction: [Territorial competence]
-Requirements: [Conditions to file report]""",
+ReportingMethod: [form | phone | whatsapp | email | app | mail]
+Anonymous: [yes | no]
+Audience: [minors | all]
+ViolenceType: [cyberviolence | all]
+Governmental: [yes | no]""",
 
             "ES": f"""Encuentra plataformas OFICIALES gubernamentales de denuncia para ciberacoso en {country}.
+
+EJEMPLOS CONOCIDOS (verificar y completar):
+- España: Policía Nacional (policia.es), Guardia Civil (guardiacivil.es)
+- INCIBE-CERT para incidentes digitales
 
 CRITERIOS ESTRICTOS:
 - Sitios .gob o equivalente oficial ÚNICAMENTE
@@ -339,22 +496,127 @@ FUENTES GUBERNAMENTALES prioritarias:
 
 Responde ÚNICAMENTE en este formato exacto:
 Nombre: [Plataforma gubernamental oficial]
-URL: [Sitio .gob o equivalente oficial]
-Formulario: [Enlace directo a formulario ciberacoso]
+URL: [Sitio .gob o equivalente oficial — CON https://]
+EnlaceDirecto: [URL directa al formulario de ciberacoso — CON https://]
+Descripción: [1-2 frases: qué permite hacer esta plataforma]
 Autoridad: [Policía/Justicia/Regulador responsable]
 Jurisdicción: [Competencia territorial]
-Requisitos: [Condiciones para presentar denuncia]"""
+MétodoDenuncia: [formulario | teléfono | whatsapp | email | aplicación | correo]
+Anónimo: [sí | no]
+Público: [menores | todos]
+TipoViolencia: [ciberviolencia | todos]
+Gubernamental: [sí | no]""",
+
+            "IT": f"""Trova piattaforme UFFICIALI governative di segnalazione per cyberbullismo in {country}.
+
+ESEMPI NOTI (verificare e completare):
+- Italia: Polizia Postale (commissariatodips.it), AGCOM
+- Svizzera: fedpol.admin.ch
+
+CRITERI RIGOROSI:
+- Siti .gov.it o equivalente ufficiale UNICAMENTE
+- Moduli online funzionali e recenti
+- Procedure specifiche per cyberbullismo (non criminalità generale)
+- Nessuna associazione privata o ONG
+- Autorità governativa o polizia/giustizia
+
+FONTI GOVERNATIVE prioritarie:
+- Piattaforme polizia/forze dell'ordine nazionali
+- Ministeri Giustizia/Interno
+- Autorità di regolamentazione digitale
+- Servizi cybercriminalità ufficiali
+
+Rispondi UNICAMENTE in questo formato esatto:
+Nome: [Piattaforma governativa ufficiale]
+URL: [Sito .gov o equivalente ufficiale — CON https://]
+LinkDiretto: [URL diretto al modulo cyberbullismo — CON https://]
+Descrizione: [1-2 frasi: cosa permette di fare questa piattaforma]
+Autorità: [Polizia/Giustizia/Regolatore responsabile]
+Giurisdizione: [Competenza territoriale]
+MetodoSegnalazione: [modulo | telefono | whatsapp | email | app | posta]
+Anonimo: [sì | no]
+Pubblico: [minori | tutti]
+TipoViolenza: [cyberviolenza | tutti]
+Governativo: [sì | no]""",
+
+            "DE": f"""Finde OFFIZIELLE Behördenplattformen zur Meldung von Cybermobbing in {country}.
+
+BEKANNTE BEISPIELE (überprüfen und ergänzen):
+- Deutschland: BKA (bka.de), Bundesnetzagentur
+- Österreich: bundeskriminalamt.at
+- Schweiz: fedpol.admin.ch
+
+STRENGE KRITERIEN:
+- Nur .bund.de oder offizielle Äquivalent-Seiten
+- Funktionierende und aktuelle Online-Formulare
+- Spezifische Cybermobbing-Verfahren (keine allgemeine Kriminalität)
+- Keine privaten Vereine oder NGOs
+- Regierungsbehörde oder Polizei/Justiz
+
+PRIORITÄRE BEHÖRDENQUELLEN:
+- Nationale Polizei/Strafverfolgungsplattformen
+- Justiz-/Innenministerien
+- Digitale Regulierungsbehörden
+- Offizielle Cyberkriminalitätsdienste
+
+Antworte NUR in diesem exakten Format:
+Name: [Offizielle Behördenplattform]
+URL: [.bund.de oder offizielle Äquivalent-Seite — MIT https://]
+DirekterLink: [Direkter URL zum Cybermobbing-Formular — MIT https://]
+Beschreibung: [1-2 Sätze: was diese Plattform erlaubt]
+Behörde: [Polizei/Justiz/Regulierer zuständig]
+Zuständigkeit: [Gebietliche Zuständigkeit]
+Meldeweg: [formular | telefon | whatsapp | email | app | post]
+Anonym: [ja | nein]
+Zielgruppe: [Minderjährige | alle]
+Gewaltart: [Cybergewalt | alle]
+Behördlich: [ja | nein]""",
+
+            "PT": f"""Encontra plataformas OFICIAIS governamentais de denúncia para ciberassédio em {country}.
+
+EXEMPLOS CONHECIDOS (verificar e completar):
+- Portugal: PSP (psp.pt), GNR (gnr.pt), CNCS
+- Brasil: SaferNet (safernet.org.br), Polícia Federal
+
+CRITÉRIOS RIGOROSOS:
+- Sites .gov.pt ou equivalente oficial UNICAMENTE
+- Formulários online funcionais e recentes
+- Procedimentos específicos de ciberassédio (não criminalidade geral)
+- Sem associações privadas ou ONGs
+- Autoridade governamental ou polícia/justiça
+
+FONTES GOVERNAMENTAIS prioritárias:
+- Plataformas polícia/forças de segurança nacionais
+- Ministérios da Justiça/Interior
+- Autoridades de regulação digital
+- Serviços oficiais de cibercriminalidade
+
+Responde UNICAMENTE neste formato exato:
+Nome: [Plataforma governamental oficial]
+URL: [Site .gov ou equivalente oficial — COM https://]
+LinkDireto: [URL direto para o formulário de ciberassédio — COM https://]
+Descrição: [1-2 frases: o que esta plataforma permite fazer]
+Autoridade: [Polícia/Justiça/Regulador responsável]
+Jurisdição: [Competência territorial]
+MétodoDenúncia: [formulário | telefone | whatsapp | email | aplicação | correio]
+Anônimo: [sim | não]
+Público-alvo: [menores | todos]
+TipoViolência: [ciberviolência | todos]
+Governamental: [sim | não]"""
         }
         
         return prompts.get(language, prompts["EN"])
     
     # ========================================================================
-    # 🏢 ASSOCIATION LOCALE - Aide professionnelle, pas conseils généraux
+    # 🏢 ASSOCIATION LOCALE — supprimée en V2
+    #    Les ressources locales sont absorbées par service_support.
+    #    Méthode conservée uniquement si des données V1 doivent être relues.
     # ========================================================================
-    
+
     @staticmethod
     def _prompt_association_locale(country: str, language: str, **kwargs) -> str:
-        """Prompt pour découverte d'associations spécialisées locales"""
+        """Deprecated V2 — redirige vers _prompt_service_support."""
+        return CategoryPrompts._prompt_service_support(country, language, **kwargs)
         
         prompts = {
             "FR": f"""Trouve des associations SPÉCIALISÉES en cyberharcèlement/cyberviolence locales en {country}.
@@ -433,48 +695,18 @@ Acreditación: [Tipo de acreditación o reconocimiento oficial]"""
         return prompts.get(language, prompts["EN"])
     
     # ================================================================
-    # 🤝 SERVICES SUPPORT - Existant/fallback (généraliste)
+    # 🤝 SERVICES SUPPORT — supprimé en V2
+    #    Fusionné dans service_support. Alias conservé pour
+    #    compatibilité avec les appels existants.
     # ================================================================
-    
+
     @staticmethod
     def _prompt_services_support(country: str, language: str, **kwargs) -> str:
-        """Prompt existant pour services d'aide générale (fallback)"""
+        """Deprecated V2 — redirige vers _prompt_service_support."""
+        return CategoryPrompts._prompt_service_support(country, language, **kwargs)
         
-        prompts = {
-            "FR": f"""Trouve-moi une association ou organisation LOCALE RÉELLE et EXISTANTE qui lutte contre la cyberviolence spécifiquement en {country}.
-            
-IMPORTANT: 
-- Donne-moi une organisation DIFFÉRENTE à chaque fois
-- Vérifie que l'organisation existe vraiment  
-- Cherche UNIQUEMENT des associations LOCALES basées en {country}
-- Évite les organisations internationales ou d'autres pays
-- Évite de répéter les mêmes organisations
-
-Réponds uniquement en français et sous ce format exact :
-Nom : [nom exact de l'association/organisation]
-URL : [site web officiel]
-Description : [description en 1-2 phrases de leur action contre la cyberviolence]
-Téléphone : [numéro si disponible, sinon laisser vide]
-Email : [email si disponible, sinon laisser vide]""",
-
-            "EN": f"""Find me a LOCAL REAL and EXISTING association or organization that fights cyberviolence specifically in {country}.
-            
-IMPORTANT:
-- Give me a DIFFERENT organization each time
-- Verify that the organization really exists
-- Look ONLY for LOCAL associations based in {country}
-- Avoid international organizations or from other countries
-- Avoid repeating the same organizations
-
-Answer only in English and use this exact format:
-Name: [exact name of association/organization]
-URL: [official website]
-Description: [1-2 sentence description of their action against cyberviolence]
-Phone: [number if available, otherwise leave empty]
-Email: [email if available, otherwise leave empty]"""
-        }
-        
-        return prompts.get(language, prompts["EN"])
+        # Délégation vers _prompt_service_support (fusion V2)
+        return CategoryPrompts._prompt_service_support(country, language, **kwargs)
 
 
 # Fonction utilitaire pour l'intégration facile
@@ -489,12 +721,16 @@ def get_category_prompt(category: str, country: str, language: str, **kwargs) ->
     return CategoryPrompts.generate_prompt(category, country, language, **kwargs)
 
 
-# Configuration des plateformes prioritaires pour procedure_plateforme
-PRIORITY_PLATFORMS = [
-    "Instagram", "TikTok", "Snapchat", 
-    "Discord", "WhatsApp", "YouTube",
-    "Facebook", "Twitter/X", "Telegram"
+# Plateformes prioritaires V2 pour procedure_plateforme
+# Séparées en deux groupes pour faciliter le ciblage des prompts.
+PRIORITY_PLATFORMS_SOCIAL = [
+    "Instagram", "TikTok", "Snapchat", "YouTube",
+    "Facebook", "X/Twitter", "BeReal", "Twitch",
 ]
+PRIORITY_PLATFORMS_MESSAGING = [
+    "Discord", "WhatsApp", "Telegram",
+]
+PRIORITY_PLATFORMS = PRIORITY_PLATFORMS_SOCIAL + PRIORITY_PLATFORMS_MESSAGING
 
 # Configuration des pays avec sources gouvernementales connues
 GOVERNMENT_SOURCES = {

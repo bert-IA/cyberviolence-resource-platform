@@ -365,11 +365,10 @@ class ResourceWorkflowManager:
         Retourne le nombre de ressources par catégorie pour un pays donné
         """
         stats = {
-            "contact_urgence": 0,
-            "procedure_plateforme": 0, 
+            "service_support": 0,
+            "procedure_plateforme": 0,
             "signalement_autorite": 0,
-            "association_locale": 0,
-            "services_support": 0  # Existant
+            "contact_urgence": 0    # alias V1
         }
         
         for resource_id, resource_data in self.unified_data.items():
@@ -390,10 +389,9 @@ class ResourceWorkflowManager:
         
         # Targets selon logic_sourcing_ressources.md
         targets = {
-            "contact_urgence": 3,
+            "service_support": 5,
             "procedure_plateforme": 6,
-            "signalement_autorite": 2,
-            "association_locale": 5
+            "signalement_autorite": 2
         }
         
         result = {}

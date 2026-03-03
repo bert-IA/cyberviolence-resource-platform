@@ -1,14 +1,23 @@
 import { DiscoveredResourceCard } from './DiscoveredResourceCard'
 import type { DiscoveredResource } from '../../services/api'
 
-interface DiscoveredResourcesListProps {
-    resources: DiscoveredResource[]
-    renderActions?: (resource: DiscoveredResource) => React.ReactNode
+// Labels lisibles — même dictionnaire que DiscoveryResultCard
+// (à extraire dans un fichier partagé si d'autres composants en ont besoin)
+const CATEGORY_LABELS: Record<string, string> = {
+    service_support: '🏢 Service d\'aide',
+    procedure_plateforme: '🌐 Procédure plateforme',
+    signalement_autorite: '🏛️ Signalement autorité',
 }
 
-export function DiscoveredResourcesList({ resources, renderActions }: DiscoveredResourcesListProps) {
+const CATEGORY_ORDER = ['service_support', 'procedure_plateforme', 'signalement_autorite']
 
-    // Protection contre undefined/null
+interface DiscoveredResourcesListProps {
+    resources: DiscoveredResource[]
+    // Décision : renderActions supprimé — les actions appartiennent à ValidationPage
+}
+
+export function DiscoveredResourcesList({ resources }: DiscoveredResourcesListProps) {
+
     if (!resources || resources.length === 0) {
         return (
             <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-lg">
@@ -18,102 +27,49 @@ export function DiscoveredResourcesList({ resources, renderActions }: Discovered
             </div>
         )
     }
-    function groupedByCategory(resources: DiscoveredResource[]) {
-        const grouped = resources.reduce((acc, resource) => {
-            if (!acc[resource.category]) {
-                acc[resource.category] = []
-            }
-            acc[resource.category].push(resource)
-            return acc
-        }, {} as Record<string, DiscoveredResource[]>)
-        return grouped
-    }
 
-    const categoryOrder = [
-        'association_locale',   // 🏢 
-        'contact_urgence',      // 📞 
-        'procedure_plateforme',  // 🌐 
-        'signalement_autorite' // 🏛️ 
-    ]
+    // Grouper par catégorie dans l'ordre défini
+    const grouped = resources.reduce((acc, r) => {
+        if (!acc[r.category]) acc[r.category] = []
+        acc[r.category].push(r)
+        return acc
+    }, {} as Record<string, DiscoveredResource[]>)
 
-    function sortByCategory(resources: DiscoveredResource[]) {
-        const grouped = groupedByCategory(resources)
-        return (categoryOrder
-            .map(category => ({
-                category,
-                resources: grouped[category] || []
-            }))
-            .filter(group => group.resources.length > 0)
-        )
-    }
+    const sortedGroups = CATEGORY_ORDER
+        .map(cat => ({ category: cat, resources: grouped[cat] || [] }))
+        .filter(g => g.resources.length > 0)
 
-    // Séparer nouvelles ressources et doublons
-    const newResources = resources.filter(r => r.is_new)
-    const duplicates = resources.filter(r => !r.is_new)
-
-    const sortedNew = sortByCategory(newResources)
-    const sortedDuplicates = sortByCategory(duplicates)
+    // Séparer pour le résumé statistique
+    const newCount = resources.filter(r => r.is_new === true).length
+    const dupCount = resources.filter(r => r.is_new === false).length
 
     return (
-        <div className="space-y-6">
-            {/* Statistiques */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <p className="text-blue-900 font-medium">
-                            📊 {resources.length} ressource(s) trouvée(s)
-                        </p>
-                        <p className="text-sm text-blue-700 mt-1">
-                            {newResources.length} nouvelle(s) · {duplicates.length} doublon(s) détecté(s)
-                        </p>
-                    </div>
-                </div>
+        <div className="space-y-4">
+
+            {/* Résumé du lot */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+                <p className="text-blue-900 font-medium text-sm">
+                    📊 {resources.length} ressource(s) analysée(s)
+                </p>
+                <p className="text-xs text-blue-700 mt-0.5">
+                    {newCount} nouvelle(s) ajoutée(s) en attente de validation
+                    {dupCount > 0 && ` · ${dupCount} doublon(s) ignoré(s)`}
+                </p>
             </div>
 
-            {/* Nouvelles ressources */}
-            {newResources.length > 0 && (
-                <div>
-                    <h3 className="text-lg font-bold text-blue-500 mb-3 flex items-center gap-2">
-                        <span>🆕</span>
-                        NOUVELLES RESSOURCES ({newResources.length})
-                    </h3>
-                    <div className="space-y-4">
-                        {sortedNew.map(group => (
-                            <div key={group.category}>
-                                <h4 className="text-lg  text-blue-900 mb-3 flex items-center gap-2">{group.category}</h4>
-                                {group.resources.map(resource => (
-                                    <DiscoveredResourceCard key={resource.id} resource={resource}>
-                                        {renderActions && renderActions(resource)}
-                                    </DiscoveredResourceCard>
-                                ))}
-                            </div>
+            {/* Groupes par catégorie — nouvelles + doublons mélangés, distingués par la couleur de carte */}
+            {sortedGroups.map(group => (
+                <div key={group.category}>
+                    <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                        {CATEGORY_LABELS[group.category] ?? group.category}
+                    </h4>
+                    <div className="space-y-1.5">
+                        {group.resources.map(resource => (
+                            <DiscoveredResourceCard key={resource.id} resource={resource} />
                         ))}
                     </div>
                 </div>
-
-            )}
-            {/* Doublons détectés */}
-            {sortedDuplicates.length > 0 && (
-                <div>
-                    <h3 className="text-lg font-semibold text-red-600 mb-3 flex items-center gap-2">
-                        <span>⚠️</span>
-                        Doublons possibles ({duplicates.length})
-                    </h3>
-                    <div className="space-y-4">
-                        {sortedDuplicates.map(group => (
-                            <div key={group.category}>
-                                <h4 className="text-lg  text-red-900 mb-3 flex items-center gap-2">{group.category}</h4>
-                                {group.resources.map(resource => (
-                                    <DiscoveredResourceCard key={resource.id} resource={resource}>
-                                        {renderActions && renderActions(resource)}
-                                    </DiscoveredResourceCard>
-                                ))}
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-            )}
+            ))}
         </div>
     )
 }

@@ -342,24 +342,16 @@ class LegacyAPIAdapter:
                                 
                                 if not is_duplicate:
                                     # Ajouter au workflow
+                                    resource_data["is_new"] = True   # ← persisté dans working_resources.json
                                     self.workflow_manager.add_discovered_resource_with_category(
                                         resource_id,
                                         resource_data,
                                         category=category)
                                     
                                     # ✅ PHASE 1.5: Capturer AVANT que la validation ne change le status
-                                    newly_discovered.append({
-                                        "id": resource_id,
-                                        "name": parsed_name,
-                                        "country": resource_data.get("country", ""),
-                                        "url": resource_data.get("website", ""),  # ✅ FIX: Inclure l'URL
-                                        "phone": resource_data.get("phone", ""),
-                                        "email": resource_data.get("email", ""),
-                                        "confidence": resource_data.get("confidence_score", 0.0),
-                                        "category": resource_data.get("category", category),  # ✅ Utiliser category du param
-                                        "description": resource_data.get("description", ""),
-                                        "is_new": True
-                                    })
+                                    newly_discovered.append(
+                                        self._serialize_resource(resource_data, resource_id, is_new=True, category=category)
+                                    )
                                     
                                     # Démarrer validation géographique
                                     self.validation_system.start_geographic_validation(resource_id)
@@ -379,18 +371,10 @@ class LegacyAPIAdapter:
                                     print(f"⚠️ Doublon détecté ({consecutive_duplicates}/{max_consecutive_duplicates}) - Raison: {duplicate_action}")
                                     
                                     # Ajouter quand même à la liste pour information
-                                    newly_discovered.append({
-                                        "id": resource_id,
-                                        "name": resource_data.get("name", ""),
-                                        "country": resource_data.get("country", ""),
-                                        "phone": resource_data.get("phone", ""),
-                                        "email": resource_data.get("email", ""),
-                                        "confidence": resource_data.get("confidence_score", 0.0),
-                                        "category": resource_data.get("category", category),
-                                        "description": resource_data.get("description", ""),
-                                        "is_new": False,
-                                        "duplicate_reason": str(duplicate_action) if duplicate_action else "unknown"
-                                    })
+                                    newly_discovered.append(
+                                        self._serialize_resource(resource_data, resource_id, is_new=False, category=category,
+                                                                  duplicate_reason=str(duplicate_action) if duplicate_action else "unknown")
+                                    )
                                     
                                     # ✅ Arrêter si trop de doublons consécutifs
                                     if consecutive_duplicates >= max_consecutive_duplicates:
@@ -460,14 +444,21 @@ class LegacyAPIAdapter:
             country_name = next((c["name"] for c in countries if c["code"] == country_code), country_code)
             
             discovered_count = 0
-            
-            # Générer plusieurs tentatives pour diversité
-            for attempt in range(max_resources):
+            found_names: list = []  # Organisations déjà trouvées → exclusion dans prompts suivants
+
+            # Boucle jusqu'à atteindre max_resources ou épuiser les tentatives
+            attempt = 0
+            max_attempts = max_resources * 4  # max 4 tentatives par ressource demandée
+            consecutive_duplicates = 0
+            max_consecutive_duplicates = 3
+
+            while discovered_count < max_resources and attempt < max_attempts and consecutive_duplicates < max_consecutive_duplicates:
+                attempt += 1
                 try:
-                    # Générer prompt spécialisé
-                    prompt = get_category_prompt(category, country_name, language, **kwargs)
+                    # Générer prompt spécialisé (avec exclusion des déjà trouvés)
+                    prompt = get_category_prompt(category, country_name, language, exclude_orgs=found_names, **kwargs)
                     
-                    logger.info(f"Tentative {attempt + 1}/{max_resources} pour {category} en {country_name}")
+                    logger.info(f"Tentative {attempt}/{max_attempts} pour {category} en {country_name} (trouvés: {discovered_count}/{max_resources})")
                     
                     # Générer avec LLM
                     response = self.llm_manager.generate(prompt)
@@ -477,18 +468,30 @@ class LegacyAPIAdapter:
                         logger.info(f"🔍 Réponse LLM brute pour {category}:\n{response.content[:500]}...")
                         
                         # Parser la réponse
-                        resource_data = self._parse_llm_response(response.content, 
-                                                               {"name": country_name, "code": country_code}, 
-                                                               language)
+                        # procedure_plateforme = ressources internationales (Instagram, TikTok, etc.)
+                        country_ctx = {"name": "International", "code": "INTER"} \
+                            if category == "procedure_plateforme" \
+                            else {"name": country_name, "code": country_code}
+                        resource_data = self._parse_llm_response(response.content, country_ctx, language)
                         
                         if resource_data:
+                            # Toujours mémoriser le nom pour les prochains prompts (doublon ou pas)
+                            parsed_name = resource_data.get("name", "")
+                            if parsed_name and parsed_name not in found_names:
+                                found_names.append(parsed_name)
+                                logger.info(f"📝 Exclusion future: {parsed_name} (liste: {found_names})")
+
                             # ⭐ VÉRIFICATION ANTI-DOUBLONS
-                            if self._is_duplicate_resource(resource_data, country_code, category):
-                                logger.info(f"⚠️  Doublon détecté pour {resource_data.get('organization_name', 'N/A')} - ignoré")
+                            effective_country_code = "INTER" if category == "procedure_plateforme" else country_code
+                            if self._is_duplicate_resource(resource_data, effective_country_code, category):
+                                consecutive_duplicates += 1
+                                logger.info(f"⚠️  Doublon détecté pour {parsed_name} - nouvelle tentative avec exclusion ({consecutive_duplicates}/{max_consecutive_duplicates})")
                                 continue
                             
+                            consecutive_duplicates = 0  # Reset si nouvelle ressource trouvée
+
                             # Ajouter au workflow avec métadonnées de catégorie
-                            resource_id = f"DISCOVERED_{country_code}_{category.upper()}_{discovered_count + 1}"
+                            resource_id = f"DISCOVERED_{effective_country_code}_{category.upper()}_{discovered_count + 1}"
                             
                             # Déterminer métadonnées selon catégorie
                             metadata = self._determine_category_metadata(category, resource_data, **kwargs)
@@ -508,10 +511,10 @@ class LegacyAPIAdapter:
                             
                             discovered_count += 1
                             
-                            logger.info(f"✅ Ressource {category} découverte: {resource_data.get('organization_name', 'N/A')}")
+                            logger.info(f"✅ Ressource {category} découverte: {resource_data.get('name', 'N/A')}")
                 
                 except Exception as e:
-                    logger.error(f"Erreur tentative {attempt + 1} pour {category}: {e}")
+                    logger.error(f"Erreur tentative {attempt} pour {category}: {e}")
                     continue
             
             return {
@@ -677,10 +680,10 @@ class LegacyAPIAdapter:
             
             # Mapping lean strategy
             lean_targets = {
-                "contact_urgence": 3,
+                "service_support": 5,
                 "procedure_plateforme": 5,
                 "signalement_autorite": 4,
-                "association_locale": 4
+                "contact_urgence": 3    # alias V1
             }
             
             total_discovered = 0
@@ -756,7 +759,7 @@ class LegacyAPIAdapter:
                 "urgency_level": "immediate" if "24h" in resource_data.get("description", "") else "normal",
                 "contact_type": "phone",
                 "availability": "24h" if "24h" in resource_data.get("description", "") else "business_hours",
-                "official_status": "government" if any(word in resource_data.get("organization_name", "").lower() 
+                "official_status": "government" if any(word in resource_data.get("name", "").lower() 
                                                      for word in ["ministère", "gouvernement", "service public"]) else "certified"
             },
             "procedure_plateforme": {
@@ -772,12 +775,6 @@ class LegacyAPIAdapter:
                 "availability": "business_hours",
                 "official_status": "government"
             },
-            "association_locale": {
-                "urgency_level": "normal",
-                "contact_type": "phone" if resource_data.get("phone") else "email",
-                "availability": "business_hours",
-                "official_status": "certified" if "agré" in resource_data.get("description", "") else "approved"
-            }
         }
         
         return metadata_by_category.get(category, {
@@ -808,8 +805,8 @@ class LegacyAPIAdapter:
             discovered_resources = []
             for resource_id, resource_data in pending_resources.items():
                 discovered_resources.append({
-                    "discovery_id": resource_id,
-                    "organization_name": resource_data.get("organization_name", ""),
+                    "id": resource_id,
+                    "organization_name": resource_data.get("name", ""),
                     "website": resource_data.get("website", ""),
                     "description": resource_data.get("description", ""),
                     "phone": resource_data.get("phone", ""),
@@ -947,7 +944,7 @@ class LegacyAPIAdapter:
             for resource_id, resource_data in critical_pending.items():
                 sources.append({
                     "id": resource_id,
-                    "organization_name": resource_data.get("organization_name", ""),
+                    "organization_name": resource_data.get("name", ""),
                     "website": resource_data.get("website", ""),
                     "description": resource_data.get("description", ""),
                     "country_name": resource_data.get("country_name", ""),
@@ -1267,212 +1264,15 @@ class LegacyAPIAdapter:
         return mappings.get(language, {})
     
     def _generate_discovery_prompt(self, country: str, language: str, search_term: str, category: str = "", exclude_orgs: List[str] = None) -> str:
-        """Génère le prompt pour la découverte LLM - Version améliorée avec support de catégorie (PHASE 2)"""
-        
-        # ✅ Gérer exclude_orgs (organisations à éviter)
-        if exclude_orgs is None:
-            exclude_orgs = []
-        
-        # 🎯 CAS SPÉCIAL: procedure_plateforme cherche les pages officielles des réseaux sociaux
-        if category == "procedure_plateforme":
-            return self._generate_platform_procedure_prompt(country, language)
-        
-        # Mapping catégorie -> description pour le prompt (associations/organisations)
-        category_descriptions = {
-            "emergency": "services d'urgence contre le cyberharcèlement",
-            "emergency_contact": "numéros d'urgence pour aide immédiate contre le cyberharcèlement",
-            "procedure": "procédures de signalement du cyberharcèlement sur les réseaux sociaux",
-            "authority": "autorités officielles de signalement du cyberharcèlement",
-            "signalement_autorite": "autorités gouvernamentales pour signaler le cyberharcèlement",
-            "local": "associations locales de lutte contre le cyberharcèlement et la cyberviolence",
-            "association_locale": "associations locales contre le cyberharcèlement et la cyberviolence"
-        }
-        
-        category_desc = category_descriptions.get(category, search_term) if category else search_term
-        
-        # ✅ Préparer la liste d'exclusion si présente
-        exclusion_text = ""
-        if exclude_orgs and len(exclude_orgs) > 0:
-            org_list = ", ".join(exclude_orgs)
-            exclusion_map = {
-                "FR": f"\n⛔ ÉVITE ABSOLUMENT ces organisations déjà trouvées : {org_list}",
-                "ES": f"\n⛔ EVITA ABSOLUTAMENTE estas organizaciones ya encontradas: {org_list}",
-                "IT": f"\n⛔ EVITA ASSOLUTAMENTE queste organizzazioni già trovate: {org_list}",
-                "DE": f"\n⛔ VERMEIDE UNBEDINGT diese bereits gefundenen Organisationen: {org_list}",
-                "PT": f"\n⛔ EVITE ABSOLUTAMENTE estas organizações já encontradas: {org_list}",
-                "EN": f"\n⛔ ABSOLUTELY AVOID these already found organizations: {org_list}"
-            }
-            exclusion_text = exclusion_map.get(language, exclusion_map["EN"])
-        
-        if language == "FR":
-            category_prompt = f" qui propose des {category_desc}" if category else ""
-            return f"""Trouve-moi une association ou organisation LOCALE RÉELLE et EXISTANTE{category_prompt} spécifiquement en {country}.
-            
-IMPORTANT: 
-- Donne-moi une organisation DIFFÉRENTE à chaque fois
-- Vérifie que l'organisation existe vraiment  
-- Cherche UNIQUEMENT des associations LOCALES basées en {country}
-- Évite les organisations internationales ou d'autres pays
-- Évite de répéter les mêmes organisations
-- La catégorie cible est: {category_desc}{exclusion_text}
+        """Génère le prompt via CategoryPrompts."""
+        from core.category_prompts import CategoryPrompts
+        return CategoryPrompts.generate_prompt(
+            category=category,
+            country=country,
+            language=language,
+            exclude_orgs=exclude_orgs or []
+        )
 
-Réponds uniquement en français et sous ce format exact :
-Nom : [nom exact de l'association/organisation]
-URL : [site web officiel]
-Description : [description en 1-2 phrases de leur action]
-Téléphone : [numéro si disponible, sinon laisser vide]
-Email : [email si disponible, sinon laisser vide]"""
-        elif language == "ES":
-            # Mapping catégorie -> description en espagnol
-            category_descriptions_es = {
-                "emergency": "servicios de emergencia contra el ciberacoso",
-                "emergency_contact": "números de emergencia para ayuda inmediata contra el ciberacoso",
-                "procedure": "procedimientos de denuncia del ciberacoso en redes sociales",
-                "authority": "autoridades oficiales de denuncia del ciberacoso",
-                "signalement_autorite": "autoridades gubernamentales para denunciar el ciberacoso",
-                "local": "asociaciones locales de lucha contra el ciberacoso y la ciberviolencia",
-                "association_locale": "asociaciones locales contra el ciberacoso y la ciberviolencia"
-            }
-            category_desc = category_descriptions_es.get(category, search_term) if category else search_term
-            category_prompt = f" que ofrece {category_desc}" if category else ""
-            
-            return f"""Encuéntrame una asociación u organización LOCAL REAL y EXISTENTE{category_prompt} específicamente en {country}.
-            
-IMPORTANTE:
-- Dame una organización DIFERENTE cada vez
-- Verifica que la organización realmente existe
-- Busca ÚNICAMENTE asociaciones LOCALES basadas en {country}
-- Evita organizaciones internacionales o de otros países
-- Evita repetir las mismas organizaciones
-- La categoría objetivo es: {category_desc}{exclusion_text}
-
-Responde solo en español y usa este formato exacto:
-Nombre: [nombre exacto de la asociación/organización]
-URL: [sitio web oficial]
-Descripción: [descripción en 1-2 frases de su acción]
-Teléfono: [número si está disponible, sino dejar vacío]
-Email: [email si está disponible, sino dejar vacío]"""
-        elif language == "IT":
-            # Mapping catégorie -> description en italien
-            category_descriptions_it = {
-                "emergency": "servizi di emergenza contro il cyberbullismo",
-                "emergency_contact": "numeri di emergenza per aiuto immediato contro il cyberbullismo",
-                "procedure": "procedure di segnalazione del cyberbullismo sui social media",
-                "authority": "autorità ufficiali di segnalazione del cyberbullismo",
-                "signalement_autorite": "autorità governative per segnalare il cyberbullismo",
-                "local": "associazioni locali di lotta contro il cyberbullismo e la cyberviolenza",
-                "association_locale": "associazioni locali contro il cyberbullismo e la cyberviolenza"
-            }
-            category_desc = category_descriptions_it.get(category, search_term) if category else search_term
-            category_prompt = f" che offre {category_desc}" if category else ""
-            
-            return f"""Trovami un'associazione o organizzazione LOCALE REALE ed ESISTENTE{category_prompt} specificamente in {country}.
-            
-IMPORTANTE:
-- Dammi un'organizzazione DIVERSA ogni volta
-- Verifica che l'organizzazione esista davvero
-- Cerca SOLO associazioni LOCALI basate in {country}
-- Evita organizzazioni internazionali o di altri paesi
-- Evita di ripetere le stesse organizzazioni
-- La categoria target è: {category_desc}{exclusion_text}
-
-Rispondi solo in italiano usando questo formato esatto:
-Nome: [nome esatto dell'associazione/organizzazione]
-URL: [sito web ufficiale]
-Descrizione: [descrizione in 1-2 frasi della loro azione]
-Telefono: [numero se disponibile, altrimenti lasciare vuoto]
-Email: [email se disponibile, altrimenti lasciare vuoto]"""
-        elif language == "DE":
-            # Mapping catégorie -> description en allemand
-            category_descriptions_de = {
-                "emergency": "Notdienste gegen Cybermobbing",
-                "emergency_contact": "Notrufnummern für sofortige Hilfe gegen Cybermobbing",
-                "procedure": "Meldeverfahren für Cybermobbing in sozialen Medien",
-                "authority": "offizielle Behörden zur Meldung von Cybermobbing",
-                "signalement_autorite": "Regierungsbehörden zur Meldung von Cybermobbing",
-                "local": "lokale Vereinigungen zur Bekämpfung von Cybermobbing und Cybergewalt",
-                "association_locale": "lokale Vereinigungen gegen Cybermobbing und Cybergewalt"
-            }
-            category_desc = category_descriptions_de.get(category, search_term) if category else search_term
-            category_prompt = f" die {category_desc} anbietet" if category else ""
-            
-            return f"""Finde mir eine LOKALE ECHTE und EXISTIERENDE Vereinigung oder Organisation{category_prompt} speziell in {country}.
-            
-WICHTIG:
-- Gib mir jedes Mal eine ANDERE Organisation
-- Überprüfe, dass die Organisation wirklich existiert
-- Suche NUR nach LOKALEN Vereinigungen mit Sitz in {country}
-- Vermeide internationale Organisationen oder aus anderen Ländern
-- Vermeide die Wiederholung derselben Organisationen
-- Die Zielkategorie ist: {category_desc}{exclusion_text}
-
-Antworte nur auf Deutsch in diesem exakten Format:
-Namen: [exakter Name der Vereinigung/Organisation]
-URL: [offizielle Website]
-Beschreibung: [Beschreibung in 1-2 Sätzen ihrer Aktion]
-Telefon: [Telefonnummer falls verfügbar, sonst leer lassen]
-Email: [E-Mail falls verfügbar, sonst leer lassen]"""
-        elif language == "PT":
-            # Mapping catégorie -> description en portugais
-            category_descriptions_pt = {
-                "emergency": "serviços de emergência contra ciberassédio",
-                "emergency_contact": "números de emergência para ajuda imediata contra ciberassédio",
-                "procedure": "procedimentos de denúncia de ciberassédio em redes sociais",
-                "authority": "autoridades oficiais de denúncia de ciberassédio",
-                "signalement_autorite": "autoridades governamentais para denunciar ciberassédio",
-                "local": "associações locais de luta contra ciberassédio e ciberviolência",
-                "association_locale": "associações locais contra ciberassédio e ciberviolência"
-            }
-            category_desc = category_descriptions_pt.get(category, search_term) if category else search_term
-            category_prompt = f" que oferece {category_desc}" if category else ""
-            
-            return f"""Encontre-me uma associação ou organização LOCAL REAL e EXISTENTE{category_prompt} especificamente em {country}.
-            
-IMPORTANTE:
-- Dê-me uma organização DIFERENTE a cada vez
-- Verifique se a organização realmente existe
-- Procure APENAS associações LOCAIS baseadas em {country}
-- Evite organizações internacionais ou de outros países
-- Evite repetir as mesmas organizações
-- A categoria alvo é: {category_desc}{exclusion_text}
-
-Responda apenas em português usando este formato exato:
-Nome: [nome exato da associação/organização]
-URL: [site oficial]
-Descrição: [descrição em 1-2 frases de sua ação]
-Telefone: [número se disponível, senão deixar vazio]
-Email: [email se disponível, senão deixar vazio]"""
-        else:
-            # Mapping catégorie -> description en anglais
-            category_descriptions_en = {
-                "emergency": "emergency services against cyberbullying",
-                "emergency_contact": "emergency numbers for immediate help against cyberbullying",
-                "procedure": "reporting procedures for cyberbullying on social media",
-                "authority": "official authorities for reporting cyberbullying",
-                "signalement_autorite": "government authorities to report cyberbullying",
-                "local": "local associations fighting cyberbullying and cyberviolence",
-                "association_locale": "local associations against cyberbullying and cyberviolence"
-            }
-            category_desc = category_descriptions_en.get(category, search_term) if category else search_term
-            category_prompt = f" offering {category_desc}" if category else ""
-            
-            return f"""Find me a LOCAL REAL and EXISTING association or organization{category_prompt} specifically in {country}.
-            
-IMPORTANT:
-- Give me a DIFFERENT organization each time
-- Verify the organization actually exists
-- Look for LOCAL associations ONLY based in {country}
-- Avoid international organizations or from other countries
-- Avoid repeating the same organizations
-- The target category is: {category_desc}{exclusion_text}
-
-Respond only in English using this exact format:
-Name: [exact name of the association/organization]
-URL: [official website]
-Description: [1-2 sentence description of their action]
-Phone: [phone number if available, otherwise leave blank]
-Email: [email if available, otherwise leave blank]"""
-    
     async def _discover_all_platform_procedures(self, language: str, admin_id: str) -> Dict[str, Any]:
         """Découvre TOUTES les plateformes principales en une seule fois (procédures universelles)"""
         try:
@@ -1519,8 +1319,8 @@ Email: [email if available, otherwise leave blank]"""
                         if response.success:
                             logger.info(f"📝 LLM Response pour {platform_name}: {response.content[:150]}...")
                             
-                            # Parser la réponse (pays universel)
-                            country = {"name": "Universal", "code": "INT"}
+                            # Parser la réponse (pays international - plateformes mondiales)
+                            country = {"name": "International", "code": "INTER"}
                             resource_data = self._parse_llm_response(response.content, country, language)
                             
                             if resource_data:
@@ -1539,6 +1339,7 @@ Email: [email if available, otherwise leave blank]"""
                                         continue
                                 
                                 # Ajouter au workflow
+                                resource_data["is_new"] = True
                                 self.workflow_manager.add_discovered_resource_with_category(
                                     resource_id, 
                                     resource_data,
@@ -1547,18 +1348,9 @@ Email: [email if available, otherwise leave blank]"""
                                 
                                 self.validation_system.start_geographic_validation(resource_id)
                                 # Ajouter à la liste des découvertes
-                                discovered_resources.append({
-                                    "id": resource_id,
-                                    "name": resource_data.get("name", platform_name),
-                                    "country": "Universal",
-                                    "url": resource_data.get("website", ""),
-                                    "phone": "",
-                                    "email": resource_data.get("email", ""),
-                                    "confidence": resource_data.get("confidence_score", 1.0),
-                                    "category": "procedure_plateforme",
-                                    "description": resource_data.get("description", ""),
-                                    "is_new": True
-                                })
+                                discovered_resources.append(
+                                    self._serialize_resource(resource_data, resource_id, is_new=True, category="procedure_plateforme")
+                                )
                                 discovered_count += 1
                                 success = True
                                 logger.info(f"✅ {platform_name} découvert ({discovered_count}/{len(platforms)})")
@@ -1611,182 +1403,51 @@ Email: [email if available, otherwise leave blank]"""
             }
     
     def _generate_single_platform_prompt(self, platform_name: str, language: str) -> str:
-        """Génère un prompt pour UNE plateforme spécifique"""
-        
-        if language == "FR":
-            return f"""Trouve-moi le lien OFFICIEL vers la page d'aide de {platform_name} pour signaler du cyberharcèlement, cyberviolence ou contenu abusif.
+        """Génère le prompt pour UNE plateforme via CategoryPrompts."""
+        from core.category_prompts import CategoryPrompts
+        return CategoryPrompts.generate_prompt(
+            category="procedure_plateforme",
+            country="International",
+            language=language,
+            platform_name=platform_name
+        )
 
-IMPORTANT:
-- URL OFFICIELLE uniquement (domaine vérifié de {platform_name})
-- Lien direct vers la page de signalement/aide/sécurité
-- Cette information est universelle (même URL dans tous les pays)
+    def _serialize_resource(self, resource_data: Dict, resource_id: str, is_new: bool,
+                              category: str = "", duplicate_reason: str = None) -> Dict:
+        """Unique point de conversion dict interne → format API.
+        Mapping : 'name' (clé interne Python) → 'organization_name' (clé publique API/JSON).
+        """
+        result = {
+            # --- Identité ---
+            "id":                resource_id,
+            "organization_name": resource_data.get("name", ""),
+            "description":       resource_data.get("description", ""),
+            # --- Géographie ---
+            "country_name":      resource_data.get("country_name", ""),
+            "country_code":      resource_data.get("country_code", ""),
+            # --- Catégorie / Workflow ---
+            "category":          resource_data.get("category", category),
+            "language":          resource_data.get("language", ""),
+            # --- Contact ---
+            "website":           resource_data.get("website", ""),
+            "direct_link":       resource_data.get("direct_link", ""),
+            "phone":             resource_data.get("phone", ""),
+            # --- Gouvernance ---
+            "is_governmental":   resource_data.get("is_governmental", False),
+            # --- Périmètre ---
+            "scope_audience":    resource_data.get("scope_audience", ""),
+            "scope_violence":    resource_data.get("scope_violence", ""),
+            "scope_anonymous":   resource_data.get("scope_anonymous", False),
+            # --- Spécifique procedure_plateforme ---
+            "action_type":       resource_data.get("action_type", ""),
+            # --- Discovery ---
+            "confidence":        resource_data.get("confidence_score", 0.0),
+            "is_new":            is_new,
+        }
+        if duplicate_reason is not None:
+            result["duplicate_reason"] = duplicate_reason
+        return result
 
-Réponds uniquement en français avec ce format exact:
-Nom: {platform_name}
-URL: [Lien OFFICIEL complet vers la page d'aide/signalement]
-Description: [En 1-2 phrases: ce que cette page permet de faire (signaler, bloquer, paramètres de confidentialité, etc.)]
-Téléphone: [laisser vide]
-Email: [email de support si disponible, sinon laisser vide]"""
-        
-        elif language == "IT":
-            return f"""Trovami il link UFFICIALE verso la pagina di aiuto di {platform_name} per segnalare cyberbullismo, cyberviolenza o contenuto abusivo.
-
-IMPORTANTE:
-- URL UFFICIALE solo (dominio verificato di {platform_name})
-- Link diretto alla pagina di segnalazione/aiuto/sicurezza
-- Questa informazione è universale (stesso URL in tutti i paesi)
-
-Rispondi solo in italiano con questo formato esatto:
-Nome: {platform_name}
-URL: [Link UFFICIALE completo verso la pagina di aiuto/segnalazione]
-Descrizione: [In 1-2 frasi: cosa permette di fare questa pagina (segnalare, bloccare, impostazioni privacy, ecc.)]
-Telefono: [lasciare vuoto]
-Email: [email di supporto se disponibile, altrimenti lasciare vuoto]"""
-        
-        elif language == "DE":
-            return f"""Finde mir den OFFIZIELLEN Link zur Hilfeseite von {platform_name} zur Meldung von Cybermobbing, Cybergewalt oder missbräuchlichem Inhalt.
-
-WICHTIG:
-- Nur OFFIZIELLE URL (verifizierte Domain von {platform_name})
-- Direkter Link zur Melde-/Hilfe-/Sicherheitsseite
-- Diese Information ist universal (gleiche URL in allen Ländern)
-
-Antworte nur auf Deutsch in diesem exakten Format:
-Namen: {platform_name}
-URL: [OFFIZIELLER vollständiger Link zur Hilfe-/Meldeseite]
-Beschreibung: [In 1-2 Sätzen: was diese Seite erlaubt (melden, blockieren, Datenschutzeinstellungen, usw.)]
-Telefon: [leer lassen]
-Email: [Support-E-Mail falls verfügbar, sonst leer lassen]"""
-        
-        elif language == "PT":
-            return f"""Encontre-me o link OFICIAL para a página de ajuda de {platform_name} para denunciar ciberassédio, ciberviolência ou conteúdo abusivo.
-
-IMPORTANTE:
-- URL OFICIAL apenas (domínio verificado de {platform_name})
-- Link direto para a página de denúncia/ajuda/segurança
-- Esta informação é universal (mesma URL em todos os países)
-
-Responda apenas em português com este formato exato:
-Nome: {platform_name}
-URL: [Link OFICIAL completo para a página de ajuda/denúncia]
-Descrição: [Em 1-2 frases: o que esta página permite fazer (denunciar, bloquear, configurações de privacidade, etc.)]
-Telefone: [deixar vazio]
-Email: [email de suporte se disponível, senão deixar vazio]"""
-        
-        else:  # EN
-            return f"""Find me the OFFICIAL link to {platform_name}'s help page for reporting cyberbullying, cyberviolence, or abusive content.
-
-IMPORTANT:
-- OFFICIAL URL only (verified domain of {platform_name})
-- Direct link to reporting/help/safety page
-- This information is universal (same URL in all countries)
-
-Respond only in English using this exact format:
-Name: {platform_name}
-URL: [OFFICIAL complete link to help/reporting page]
-Description: [In 1-2 sentences: what this page allows you to do (report, block, privacy settings, etc.)]
-Phone: [leave blank]
-Email: [support email if available, otherwise leave blank]"""
-    
-    def _generate_platform_procedure_prompt(self, country: str, language: str) -> str:
-        """Génère un prompt spécial pour trouver les procédures officielles des réseaux sociaux"""
-        
-        if language == "FR":
-            return """Trouve-moi UNE plateforme de réseau social populaire (Facebook, Instagram, TikTok, Snapchat, X/Twitter, YouTube, Discord, WhatsApp, etc.) et donne-moi le lien OFFICIEL vers leur page d'aide pour signaler du cyberharcèlement ou de la cyberviolence.
-
-IMPORTANT:
-- Donne-moi UNE SEULE plateforme DIFFÉRENTE à chaque fois
-- URL OFFICIELLE uniquement (domaine vérifié)
-- Lien direct vers la procédure de signalement/aide
-- Cette information est universelle (même procédure dans tous les pays)
-
-Réponds uniquement en français sous ce format exact :
-Nom : [Nom de la plateforme (ex: Facebook, TikTok)]
-URL : [Lien OFFICIEL vers la page d'aide/signalement]
-Description : [En 1-2 phrases : que permet de faire cette page (signaler, bloquer, modifier compte, etc.)]
-Téléphone : [laisser vide]
-Email : [email de support si disponible sur leur site officiel, sinon laisser vide]"""
-        
-        elif language == "ES":
-            return """Encuéntrame UNA plataforma de red social popular (Facebook, Instagram, TikTok, Snapchat, X/Twitter, YouTube, Discord, WhatsApp, etc.) y dame el enlace OFICIAL hacia su página de ayuda para denunciar ciberacoso o ciberviolencia.
-
-IMPORTANTE:
-- Dame UNA SOLA plataforma DIFERENTE cada vez
-- URL OFICIAL únicamente (dominio verificado)
-- Enlace directo hacia el procedimiento de denuncia/ayuda
-- Esta información es universal (mismo procedimiento en todos los países)
-
-Responde solo en español con este formato exacto:
-Nombre: [Nombre de la plataforma (ej: Facebook, TikTok)]
-URL: [Enlace OFICIAL hacia la página de ayuda/denuncia]
-Descripción: [En 1-2 frases: qué permite hacer esta página (denunciar, bloquear, modificar cuenta, etc.)]
-Teléfono: [dejar vacío]
-Email: [email de soporte si está disponible en su sitio oficial, sino dejar vacío]"""
-        
-        elif language == "IT":
-            return """Trovami UNA piattaforma di social media popolare (Facebook, Instagram, TikTok, Snapchat, X/Twitter, YouTube, Discord, WhatsApp, ecc.) e dammi il link UFFICIALE verso la loro pagina di aiuto per segnalare cyberbullismo o cyberviolenza.
-
-IMPORTANTE:
-- Dammi UNA SOLA piattaforma DIVERSA ogni volta
-- URL UFFICIALE solo (dominio verificato)
-- Link diretto alla procedura di segnalazione/aiuto
-- Questa informazione è universale (stessa procedura in tutti i paesi)
-
-Rispondi solo in italiano con questo formato esatto:
-Nome: [Nome della piattaforma (es: Facebook, TikTok)]
-URL: [Link UFFICIALE verso la pagina di aiuto/segnalazione]
-Descrizione: [In 1-2 frasi: cosa permette di fare questa pagina (segnalare, bloccare, modificare account, ecc.)]
-Telefono: [lasciare vuoto]
-Email: [email di supporto se disponibile sul loro sito ufficiale, altrimenti lasciare vuoto]"""
-        
-        elif language == "DE":
-            return """Finde mir EINE beliebte Social-Media-Plattform (Facebook, Instagram, TikTok, Snapchat, X/Twitter, YouTube, Discord, WhatsApp, usw.) und gib mir den OFFIZIELLEN Link zu ihrer Hilfeseite zur Meldung von Cybermobbing oder Cybergewalt.
-
-WICHTIG:
-- Gib mir EINE EINZIGE ANDERE Plattform jedes Mal
-- Nur OFFIZIELLE URL (verifizierte Domain)
-- Direkter Link zum Melde-/Hilfeverfahren
-- Diese Information ist universal (gleiches Verfahren in allen Ländern)
-
-Antworte nur auf Deutsch in diesem exakten Format:
-Namen: [Name der Plattform (z.B.: Facebook, TikTok)]
-URL: [OFFIZIELLER Link zur Hilfe-/Meldeseite]
-Beschreibung: [In 1-2 Sätzen: was diese Seite erlaubt (melden, blockieren, Konto ändern, usw.)]
-Telefon: [leer lassen]
-Email: [Support-E-Mail falls auf ihrer offiziellen Website verfügbar, sonst leer lassen]"""
-        
-        elif language == "PT":
-            return """Encontre-me UMA plataforma de rede social popular (Facebook, Instagram, TikTok, Snapchat, X/Twitter, YouTube, Discord, WhatsApp, etc.) e dê-me o link OFICIAL para sua página de ajuda para denunciar ciberassédio ou ciberviolência.
-
-IMPORTANTE:
-- Dê-me UMA ÚNICA plataforma DIFERENTE cada vez
-- URL OFICIAL apenas (domínio verificado)
-- Link direto para o procedimento de denúncia/ajuda
-- Esta informação é universal (mesmo procedimento em todos os países)
-
-Responda apenas em português com este formato exato:
-Nome: [Nome da plataforma (ex: Facebook, TikTok)]
-URL: [Link OFICIAL para a página de ajuda/denúncia]
-Descrição: [Em 1-2 frases: o que esta página permite fazer (denunciar, bloquear, modificar conta, etc.)]
-Telefone: [deixar vazio]
-Email: [email de suporte se disponível no site oficial, senão deixar vazio]"""
-        
-        else:  # EN
-            return """Find me ONE popular social media platform (Facebook, Instagram, TikTok, Snapchat, X/Twitter, YouTube, Discord, WhatsApp, etc.) and give me the OFFICIAL link to their help page for reporting cyberbullying or cyberviolence.
-
-IMPORTANT:
-- Give me ONE SINGLE DIFFERENT platform each time
-- OFFICIAL URL only (verified domain)
-- Direct link to reporting/help procedure
-- This information is universal (same procedure in all countries)
-
-Respond only in English using this exact format:
-Name: [Platform name (e.g., Facebook, TikTok)]
-URL: [OFFICIAL link to help/reporting page]
-Description: [In 1-2 sentences: what this page allows you to do (report, block, modify account, etc.)]
-Phone: [leave blank]
-Email: [support email if available on their official site, otherwise leave blank]"""
-    
     def _parse_llm_response(self, response_text: str, country: Dict, language: str) -> Optional[Dict]:
         """Parse la réponse LLM en données structurées - Version TRÈS tolérante avec fallbacks"""
         import re
@@ -1805,28 +1466,32 @@ Email: [support email if available on their official site, otherwise leave blank
                 
             # Nom/Name/Nombre/Nome/Namen - Support toutes langues + patterns plus flexibles
             # ✅ AMÉLIORÉ: Chercher aussi sans restriction au début
-            match = re.search(r"(Nom|Name|Nombre|Nome|Namen|Service|Organisation|Organization|Organisación|Organización)\s*[:\-]\s*(.+)", line, re.IGNORECASE)
-            if match and not data.get("organization_name"):
+            # Plateforme/Platform/Plataforma ajouté pour procedure_plateforme (FR/EN/ES)
+            match = re.search(r"(Nom|Name|Nombre|Nome|Namen|Plateforme|Platform|Plataforma|Piattaforma|Plattform|Service|Organisation|Organization|Organisación|Organización)\s*[:\-]\s*(.+)", line, re.IGNORECASE)
+            if match and not data.get("name"):
                 org_name = match.group(2).strip()
                 # Nettoyer les caractères superflus
                 org_name = re.sub(r'^[\*\-\•\s]+', '', org_name)
                 org_name = re.sub(r'[\*\-\•\s]+$', '', org_name)
                 if org_name and org_name.lower() not in ['n/a', 'none', 'na', '']:
-                    data["organization_name"] = org_name
-                    logger.info(f"✓ Nom trouvé: {data['organization_name']}")
+                    data["name"] = org_name
+                    logger.info(f"✓ Nom trouvé: {data['name']}")
             
-            # ✅ FALLBACK NOM: Si pas de nom trouvé, chercher la première ligne substantive (qui n'est pas un label)
-            if not data.get("organization_name") and len(line) > 5 and ':' not in line and '@' not in line and 'http' not in line.lower():
-                # Cette ligne pourrait être un nom si elle n'a pas de séparateur structuré
-                if len(line.split()) > 1 or len(line) > 10:  # Au moins 2 mots ou 10 caractères
-                    potential_name = line
-                    if potential_name.lower() not in ['n/a', 'none', 'na', 'not available']:
-                        data["organization_name"] = potential_name
-                        logger.info(f"✓ Nom extrait (fallback ligne): {data['organization_name']}")
+            # ✅ FALLBACK NOM: Si pas de nom trouvé, chercher la première ligne substantive (qui n'est pas un label ni une intro)
+            # ⚠️  Exclure les phrases d'intro LLM ("Voici", "Here is", "Aqui", "Voilà"...)
+            INTRO_PREFIXES = ('voici', 'voilà', 'here is', 'here are', 'aqui', 'ecco', 'hier sind', 'ci-dessous', 'below')
+            if not data.get("name") and len(line) > 5 and ':' not in line and '@' not in line and 'http' not in line.lower():
+                if not line.lower().startswith(INTRO_PREFIXES):
+                    if len(line.split()) > 1 or len(line) > 10:
+                        potential_name = line
+                        if potential_name.lower() not in ['n/a', 'none', 'na', 'not available']:
+                            data["name"] = potential_name
+                            logger.info(f"✓ Nom extrait (fallback ligne): {data['name']}")
             
             # Description/Descripción/Descrizione/Beschreibung - TRÈS flexible (PAS DE ^ pour permettre indentation)
             # ✅ AMÉLIORÉ: Sans restriction de début de ligne
-            match = re.search(r"(Description|Desc|Descripción|Descrizione|Beschreibung|Mission|Spécialisation|Specialization|Missión|Action|Acciones|Azioni|Maßnahmen|Ação|About|Sobre|À propos)\s*[:\-]\s*(.+)", line, re.IGNORECASE)
+            # ⚠️  'Action' retiré : trop générique, capturait TypeAction: comme description
+            match = re.search(r"(Description|Desc|Descripción|Descrizione|Beschreibung|Mission|Spécialisation|Specialization|About|Sobre|À propos)\s*[:\-]\s*(.+)", line, re.IGNORECASE)
             if match and not data.get("description"):
                 desc_candidate = match.group(2).strip()
                 # Nettoyer et valider
@@ -1837,13 +1502,27 @@ Email: [support email if available on their official site, otherwise leave blank
                     logger.info(f"✓ Description trouvée (pattern): {data['description'][:100]}...")
             
             # URL/Site/Sitio/Sito/Website - Regex étendu pour capturer URLs complètes
-            match = re.search(r"(URL|Site|Sitio|Sito|Website|Web|Sitio web|Website oficial|Lien|Link)\s*[:\-]\s*(https?://[^\s\]]+)", line, re.IGNORECASE)
+            # Capture aussi les URLs sans https:// (ex: internet-signalement.gouv.fr)
+            match = re.search(r"(URL|Site|Sitio|Sito|Website|Web|Sitio web|Website oficial|Lien|Link)\s*[:\-]\s*(https?://[^\s\]]+|[a-z0-9][a-z0-9\-\.]+\.[a-z]{2,}[^\s\]]*)", line, re.IGNORECASE)
             if match and not data.get("website"):
                 url = match.group(2).strip()
-                # Nettoyer les caractères de ponctuation en fin d'URL
                 url = re.sub(r'[,;.\)\]]+$', '', url)
+                if not url.startswith('http'):
+                    url = 'https://' + url
                 data["website"] = url
                 logger.info(f"✓ URL trouvée: {data['website']}")
+
+            # ✅ V2 : LienDirect/DirectLink → direct_link (+ fallback website si URL absente)
+            # Capture aussi les URLs sans https:// (ex: pharos.gouv.fr/...)  
+            match = re.search(r"(LienDirect|DirectLink|EnlaceDirecto|LinkDiretto|DirekterLink|LinkDireto)\s*[:\-]\s*(https?://[^\s\]]+|[a-z0-9][a-z0-9\-\.]+\.[a-z]{2,}[^\s\]]*)", line, re.IGNORECASE)
+            if match and not data.get("direct_link"):  # ← NE PAS écraser si déjà trouvé
+                lien = re.sub(r'[,;.\)\]]+$', '', match.group(2).strip())
+                if not lien.startswith('http'):
+                    lien = 'https://' + lien
+                data["direct_link"] = lien
+                if not data.get("website"):  # utiliser comme website si URL manquante
+                    data["website"] = lien
+                logger.info(f"✓ LienDirect trouvé: {data['direct_link']}")
             
             # Chercher des URLs même sans préfixe (utiliser même pattern étendu)
             url_match = re.search(r"(https?://[^\s\]]+)", line)
@@ -1862,9 +1541,10 @@ Email: [support email if available on their official site, otherwise leave blank
                     data["phone"] = phone_candidate
                     logger.info(f"✓ Téléphone trouvé: {data['phone']}")
             
-            # Détection de nuéros même sans préfixe (formats européens/internationaux)
+            # Détection de numéros même sans préfixe (formats européens/internationaux)
+            # ⚠️  Exclure les lignes contenant une URL : les IDs d'articles (ex: /547601325240231) seraient capturés
             phone_match = re.search(r"(\+?\d{1,4}[\s\-\.]?\d{1,4}[\s\-\.]?\d{1,4}[\s\-\.]?\d{1,4}[\s\-\.]?\d{0,4})", line)
-            if phone_match and not data.get("phone") and len(phone_match.group(1).replace(" ", "").replace("-", "").replace(".", "")) >= 8:
+            if phone_match and not data.get("phone") and 'http' not in line.lower() and len(phone_match.group(1).replace(" ", "").replace("-", "").replace(".", "")) >= 8:
                 data["phone"] = phone_match.group(1).strip()
                 logger.info(f"✓ Numéro extrait: {data['phone']}")
             
@@ -1881,13 +1561,60 @@ Email: [support email if available on their official site, otherwise leave blank
             if email_match and not data.get("email"):
                 data["email"] = email_match.group(1).strip()
                 logger.info(f"✓ Email extrait: {data['email']}")
+
+            # ✅ V2 : champs scope + gouvernance + action (labels multilingues)
+            match = re.search(r"(PublicVise|Audience|P[úu]blico|Pubblico|Zielgruppe|P[úu]blico-alvo)\s*[:\-]\s*(.+)", line, re.IGNORECASE)
+            if match and not data.get("scope_audience"):
+                data["scope_audience"] = match.group(2).strip().lower()
+                logger.info(f"✓ PublicVise: {data['scope_audience']}")
+
+            match = re.search(r"(TypeViolence|ViolenceType|TipoViolencia|TipoViolenza|Gewaltart|TipoViol[êe]ncia)\s*[:\-]\s*(.+)", line, re.IGNORECASE)
+            if match and not data.get("scope_violence"):
+                data["scope_violence"] = match.group(2).strip().lower()
+                logger.info(f"✓ TypeViolence: {data['scope_violence']}")
+
+            match = re.search(r"(SignalementAnonyme|Anonymous|An[oóô]nim[oe]|Anonym)\s*[:\-]\s*(.+)", line, re.IGNORECASE)
+            if match and not data.get("scope_anonymous"):
+                val = match.group(2).strip().lower()
+                data["scope_anonymous"] = val in ["oui", "yes", "true", "1", "sí", "si", "sì", "sim", "ja"]
+                logger.info(f"✓ SignalementAnonyme: {data['scope_anonymous']}")
+
+            match = re.search(r"(SourceGouvernementale|Governmental|Gubernamental|Governativo|Beh[öo]rdlich|Governamental)\s*[:\-]\s*(.+)", line, re.IGNORECASE)
+            if match and not data.get("is_governmental"):
+                val = match.group(2).strip().lower()
+                data["is_governmental"] = val in ["oui", "yes", "true", "1", "sí", "si", "sì", "sim", "ja"]
+                logger.info(f"✓ SourceGouvernementale: {data['is_governmental']}")
+
+            match = re.search(r"(TypeAction|ActionType|TipoAcci[oó]n|TipoAzione|Aktionstyp|TipoA[çc][aã]o)\s*[:\-]\s*(.+)", line, re.IGNORECASE)
+            if match and not data.get("action_type"):
+                data["action_type"] = match.group(2).strip().lower()
+                logger.info(f"✓ TypeAction: {data['action_type']}")
+
+            match = re.search(r"(ModeSignalement|ReportingMethod|M[eé]todoDenuncia|MetodoSegnalazione|Meldeweg|M[eé]todoDen[uú]ncia)\s*[:\-]\s*(.+)", line, re.IGNORECASE)
+            if match and not data.get("scope_signalement"):
+                data["scope_signalement"] = match.group(2).strip().lower()
+                logger.info(f"✓ ModeSignalement: {data['scope_signalement']}")
+
+            match = re.search(r"NomPlateforme\s*[:\-]\s*(.+)", line, re.IGNORECASE)
+            if match and not data.get("platform_name"):
+                data["platform_name"] = match.group(1).strip()
+                logger.info(f"✓ NomPlateforme: {data['platform_name']}")
+
+            # Autorité/Authority/Autoridad → description de fallback pour signalement_autorite
+            match = re.search(r"(Autorit[eé]|Authority|Autoridad|Autorit[àa]|Beh[öo]rde|Autoridade)\s*[:\-]\s*(.+)", line, re.IGNORECASE)
+            if match and not data.get("description"):
+                val = match.group(2).strip()
+                val = re.sub(r'^[\*\-\•\s]+', '', val)
+                if val and len(val) > 5:
+                    data["description"] = f"Plateforme officielle de signalement. Autorité compétente : {val}"
+                    logger.info(f"✓ Description générée depuis Autorité: {data['description'][:80]}...")
         
         # ✅ SUPER FALLBACK DESCRIPTION: Si aucune description trouvée, reconstruire à partir des lignes
         if not data.get("description") and len(lines_with_content) > 1:
             # Chercher une ligne qui pourrait être une description (longue, sans : ni @)
             for i, line in enumerate(lines_with_content):
                 # Ignorer le nom si on l'a déjà trouvé, ignorer les URLs et emails
-                if (line != data.get("organization_name") and 
+                if (line != data.get("name") and 
                     len(line) > 10 and 
                     ':' not in line and 
                     '@' not in line and 
@@ -1902,18 +1629,18 @@ Email: [support email if available on their official site, otherwise leave blank
         if not data.get("description") and data.get("website"):
             platform_keywords = ['facebook', 'instagram', 'tiktok', 'snapchat', 'twitter', 'youtube', 
                                'discord', 'whatsapp', 'telegram', 'linkedin']
-            name_lower = data.get("organization_name", "").lower()
+            name_lower = data.get("name", "").lower()
             url_lower = data.get("website", "").lower()
             
             # Si le nom ou l'URL contient une plateforme connue
             if any(platform in name_lower or platform in url_lower for platform in platform_keywords):
-                platform_name = data.get("organization_name", "Cette plateforme")
+                platform_name = data.get("name", "Cette plateforme")
                 data["description"] = f"{platform_name} - Page officielle d'aide et de signalement pour le cyberharcèlement et contenus abusifs."
                 logger.info(f"✓ Description générée pour plateforme: {data['description']}")
         
         # Validation stricte - Nom + Description + Au moins 1 contact (phone, email ou website)
         # ✅ PHASE 2 FIX: Description est obligatoire pour évaluer la ressource
-        has_name = bool(data.get("organization_name"))
+        has_name = bool(data.get("name"))
         has_description = bool(data.get("description"))
         has_contact = bool(data.get("website") or data.get("phone") or data.get("email"))
         
@@ -1926,7 +1653,7 @@ Email: [support email if available on their official site, otherwise leave blank
             
             # ✅ NOUVEAU: Calculer le confiance en fonction de la complétude
             fields_count = sum([
-                bool(data.get("organization_name")),
+                bool(data.get("name")),
                 bool(data.get("description")),
                 bool(data.get("website")),
                 bool(data.get("phone")),
@@ -1936,8 +1663,6 @@ Email: [support email if available on their official site, otherwise leave blank
             confidence_score = min(1.0, 0.6 + (fields_count * 0.1))
             
             data.update({
-                "name": data.get("organization_name", ""),  # ✅ Champ "name" pour compatibilité
-                "organization_name": data.get("organization_name", ""),
                 "description": data.get("description", ""),  # ✅ Description obligatoire
                 "country": country["name"],  # ✅ Champ "country" pour la capture
                 "country_name": country["name"],
@@ -1947,7 +1672,7 @@ Email: [support email if available on their official site, otherwise leave blank
                 "source": "llm_discovery",
                 "confidence_score": confidence_score  # ✅ Nouveau champ
             })
-            logger.info(f"✅ Ressource valide ajoutée: {data['name']} ({country['code']}) - Confiance: {confidence_score:.2f}")
+            logger.info(f"✅ Ressource valide ajoutée: {data.get('name', 'N/A')} ({country['code']}) - Confiance: {confidence_score:.2f}")
             return data
         else:
             # Log détaillé pour diagnostic
@@ -1977,7 +1702,7 @@ Email: [support email if available on their official site, otherwise leave blank
         import re
         from difflib import SequenceMatcher
         
-        new_name = new_resource.get('organization_name', '').strip()
+        new_name = new_resource.get('name', '').strip()
         new_website = new_resource.get('website', '').strip()
         new_phone = new_resource.get('phone', '').strip()
         
@@ -2001,7 +1726,7 @@ Email: [support email if available on their official site, otherwise leave blank
         existing_resources = self.workflow_manager.unified_data
         
         for resource_id, existing_resource in existing_resources.items():
-            existing_name = existing_resource.get('organization_name', '').strip()
+            existing_name = existing_resource.get('name', '').strip()
             existing_website = existing_resource.get('website', '').strip()
             existing_phone = existing_resource.get('phone', '').strip()
             existing_country = existing_resource.get('country_code', '')

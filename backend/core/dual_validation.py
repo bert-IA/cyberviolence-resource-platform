@@ -78,13 +78,13 @@ class ValidationCriteria:
             # Fallback vers critères génériques si models non disponibles
             return ValidationCriteria.critical_criteria if validation_stage == "critical" else ValidationCriteria.geo_criteria
         
-        # Mapping string vers enum
+        # Mapping string vers enum (V2 : association_locale supprimée)
         category_enum_mapping = {
-            "contact_urgence": ResourceCategory.CONTACT_URGENCE,
+            "service_support": ResourceCategory.SERVICE_SUPPORT,
             "procedure_plateforme": ResourceCategory.PROCEDURE_PLATEFORME,
             "signalement_autorite": ResourceCategory.SIGNALEMENT_AUTORITE,
-            "association_locale": ResourceCategory.ASSOCIATION_LOCALE,
-            "services_support": ResourceCategory.SERVICES_SUPPORT
+            "contact_urgence": ResourceCategory.CONTACT_URGENCE,     # alias V1
+            "services_support": ResourceCategory.SERVICES_SUPPORT    # alias V1
         }
         
         category_enum = category_enum_mapping.get(category)
@@ -102,12 +102,10 @@ class ValidationCriteria:
             }
             
             # Ajouter critères spécialisés selon catégorie
-            if category == "contact_urgence":
+            if category in ("contact_urgence", "service_support", "services_support"):
                 geo_specialized["specialisation"] = specialized_criteria.get("specialisation", "Spécialisation cyberviolence vérifiée")
             elif category == "signalement_autorite":
                 geo_specialized["site_officiel"] = specialized_criteria.get("site_officiel", "Domaine gouvernemental vérifié")
-            elif category == "association_locale":
-                geo_specialized["zone_geographique"] = specialized_criteria.get("zone_geographique", "Zone de couverture vérifiée")
                 
             return geo_specialized
             

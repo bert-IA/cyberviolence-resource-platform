@@ -1,25 +1,1077 @@
-Modification de la logique métier du backend
+Modification de la logique métier du backend - Version 2
+=========================================================
 
-Les besoins : trois type de données
-1) Service_support : qui regroue des supports à l'échelle nationale d'aide aux mineures confronté à de la cyberviolence.
-    cela peut s'étendre à toute forme de violence même hors intenet.
-    Pour chaque support il faut 
-        - un descriptif du service proposé
-        - un périmètre d'intervention (quel publique mineurs ou pas,  quel problème harcèlement cyberviolence, anonyme ou pas)
-        - une modalité de contact (télépone, mail, formulaire ....)
-        -  un lien disponible sur la page contact ou aide qui permette d'accéder directement au formulaire ou au téléphone en cas de besoin
-en pririté on souhaite privilégié les services gouvernemntaux
+Trois types de ressources à découvrir et valider :
 
-2) procedure_plateforme : source officiel des plateofrme des réseaux sociaux
-        - on veut les procédure officilele pour pour gérer les profils, 
-        action à faire en cas de problème sur le réseau, 
-    il ne faut pas se contenter des plateformes classiques mais aussi aller vers les apli de dialogue discord entre jeunes
+─────────────────────────────────────────────────────────
+1) service_support
+─────────────────────────────────────────────────────────
+   Définition :
+     Services d'assistance nationaux destinés aux personnes
+     (prioritairement les mineurs) confrontées à la cyberviolence
+     ou à toute forme de violence, y compris hors internet.
 
-3) Signalement autorité : source officiel des autorité légale que l'on peut contacter en cas de cyber violence ou étendu à de la violence
-Pour chaque autorité  il faut 
-        - un descriptif du service proposé
-        - un périmètre d'intervention (quel publique mineurs ou pas,  quel problème harcèlement cyberviolence, anonyme ou pas, toute violence ou pas )
-        - une modalité de contact
-        - les informations précise de contact teléphone mail ....
+   Priorité : services gouvernementaux ou officiellement reconnus.
 
+   Champs requis :
+     - description         : descriptif du service proposé
+     - scope               : périmètre d'intervention
+                             (public visé : mineurs/tous,
+                              type de violence : harcèlement/cyberviolence/tous,
+                              anonymat : oui/non)
+     - contact_methods     : modalités de contact (téléphone, mail, formulaire...)
+     - direct_link         : lien direct vers la page d'aide ou de contact
+                             (accès direct au formulaire ou au numéro en cas de besoin)
+     - is_governmental     : booléen indiquant si la source est gouvernementale
+
+   Capacité LLM :
+     Bonne capacité de découverte, surtout pour les services publics
+     bien référencés. Nécessite un prompt précis sur le public cible
+     et le territoire géographique.
+
+─────────────────────────────────────────────────────────
+2) procedure_plateforme
+─────────────────────────────────────────────────────────
+   Définition :
+     Procédures officielles des plateformes numériques pour gérer
+     les situations de cyberviolence (signalement, gestion de profil,
+     blocage, suppression de contenu...).
+
+   Périmètre :
+     Inclure les réseaux sociaux classiques (Facebook, Instagram,
+     TikTok, X, YouTube, Snapchat...) ET les applications de
+     communication entre jeunes (Discord, WhatsApp, Telegram...).
+
+   Champs requis :
+     - description         : description de la procédure
+     - platform_name       : nom de la plateforme
+     - action_type         : type d'action (signalement, gestion profil,
+                              suppression contenu, blocage...)
+     - direct_link         : lien direct vers la page officielle d'aide
+
+   Capacité LLM :
+     Très bonne capacité pour les grandes plateformes. Penser à
+     explicitement cibler les apps de dialogue (Discord, etc.)
+     dans les prompts.
+
+─────────────────────────────────────────────────────────
+3) signalement_autorite
+─────────────────────────────────────────────────────────
+   Définition :
+     Autorités légales officielles à contacter en cas de
+     cyberviolence ou de violence au sens large.
+
+   Champs requis :
+     - description         : descriptif du service proposé
+     - scope               : périmètre d'intervention
+                             (public visé : mineurs/tous,
+                              type de violence : cyberviolence/tous,
+                              anonymat : oui/non)
+     - contact_methods     : modalités de contact disponibles
+     - phone               : numéro de téléphone direct
+     - email               : adresse email de contact
+     - direct_link         : lien vers le formulaire officiel de signalement
+
+   Capacité LLM :
+     Bonne capacité pour les autorités nationales connues (police,
+     gendarmerie, CNIL, plateformes gouvernementales comme
+     cybermalveillance.gouv.fr). Les ressources locales ou peu
+     référencées seront plus difficiles à découvrir automatiquement.
+
+
+
+═══════════════════════════════════════════════════════════════
+ANALYSE TECHNIQUE DU BACKEND & STRATÉGIE D'ÉVOLUTION
+Rédigée par : GitHub Copilot (expert Python/FastAPI)
+Date : 19 février 2026
+═══════════════════════════════════════════════════════════════
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. ÉTAT ACTUEL DU BACKEND
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1.1 Architecture actuelle
+─────────────────────────
+   admin_api.py         → Point d'entrée FastAPI (2250 lignes, monolithique)
+   core/api_adapter.py  → Couche d'abstraction stockage/workflow
+   core/category_prompts.py  → Prompts LLM par catégorie
+   core/resource_models.py   → Modèles de données (enums, dataclasses)
+   core/geo_discovery.py     → Découverte géographique dynamique
+   working_resources.json    → Stockage des ressources (JSON flat)
+
+1.2 Catégories actuellement supportées dans category_prompts.py
+───────────────────────────────────────────────────────────────
+   ✅ contact_urgence        → Prompt existant et complet
+   ✅ procedure_plateforme   → Prompt existant et complet
+   ✅ signalement_autorite   → Prompt enregistré mais à vérifier
+   ✅ association_locale     → Prompt existant (à supprimer en V2)
+   ⚠️  services_support      → Fallback généraliste (à refactoriser)
+
+1.3 Workflow des données (pipeline actuel)
+──────────────────────────────────────────
+   POST /geographic/discover
+     → LLM génère des ressources brutes
+     → Stockage dans working_resources.json avec workflow_status="discovered"
+     → api_adapter.start_geographic_validation() → "geo_pending"
+
+   GET /sources?status=geo_pending
+     → ValidationPage front : OverviewStep + ReviewStep
+     → POST /geographic/validate-batch (approve/reject)
+     → geo_pending → geo_validated → critical_pending → rag_ready
+
+1.4 Problèmes identifiés par rapport à la V2
+──────────────────────────────────────────────
+   ❌ Catégorie "association_locale" n'existe plus en V2
+      → Remplacée par "service_support" (portée nationale + gouvernemental)
+   ❌ Champs manquants dans le modèle de stockage :
+      → scope (périmètre d'intervention) non structuré
+      → direct_link absent (distinct de website)
+      → is_governmental absent
+      → action_type absent (pour procedure_plateforme)
+      → contact_methods non structuré (juste phone/email séparés)
+   ❌ admin_api.py monolithique (2250 lignes) : difficile à maintenir
+   ⚠️  Le mapping admin_api.py ligne ~940 duplique la logique de
+      resource_models.py : deux sources de vérité
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. STRATÉGIE D'ÉVOLUTION - VERSION 2
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2.1 Nouvelles catégories V2 (remplacement)
+──────────────────────────────────────────
+   AVANT (V1)                   APRES (V2)
+   ─────────────────────────    ──────────────────────────────
+   contact_urgence          →   service_support (élargi)
+   procedure_plateforme     →   procedure_plateforme (enrichi)
+   association_locale       →   SUPPRIMÉ
+   signalement_autorite     →   signalement_autorite (enrichi)
+   services_support         →   fusion dans service_support
+
+2.2 Modifications du modèle de données (resource_models.py)
+────────────────────────────────────────────────────────────
+
+   Nouveau modèle commun (tous types) :
+   ┌────────────────────────────────────────────────────────┐
+   │ Champs obligatoires :                                  │
+   │   name, description, website, direct_link              │
+   │   category, country_code, language                     │
+   │   workflow_status, source, confidence_score            │
+   │                                                        │
+   │ Champs contact (optionnels) :                          │
+   │   phone, email, contact_methods (liste)                │
+   │                                                        │
+   │ Champs scope (nouveau) :                               │
+   │   scope_audience  : "mineurs" | "tous"                 │
+   │   scope_violence  : "cyberviolence" | "tous"           │
+   │   scope_anonymous : true | false                       │
+   │                                                        │
+   │ Champs gouvernance (nouveau) :                         │
+   │   is_governmental : bool                               │
+   │   official_status : enum (government/certified/...)    │
+   │                                                        │
+   │ Champs spécifiques procedure_plateforme :              │
+   │   platform_name, action_type                           │
+   └────────────────────────────────────────────────────────┘
+
+2.3 Modifications des prompts (category_prompts.py)
+────────────────────────────────────────────────────
+   Fichier à modifier : backend/core/category_prompts.py
+
+   ACTION 1 : Renommer/refactoriser _prompt_contact_urgence
+   → Nouveau : _prompt_service_support()
+   → Prompt élargi : inclut services hors internet, pas seulement urgences
+   → Ajouter : is_governmental=True pour prioriser sources gouvernementales
+
+   ACTION 2 : Enrichir _prompt_procedure_plateforme
+   → Ajouter : Discord, WhatsApp, Telegram, BeReal, Twitch
+   → Ajouter : champ action_type dans la réponse LLM attendue
+   → Ajouter : direct_link vers page officielle d'aide
+
+   ACTION 3 : Enrichir _prompt_signalement_autorite
+   → Ajouter : scope_anonymous dans la réponse LLM attendue
+   → Exemples concrets : cybermalveillance.gouv.fr, PHAROS
+
+   ACTION 4 : Supprimer _prompt_association_locale
+   → Les ressources locales ne correspondent plus au besoin V2
+
+2.4 Refactoring admin_api.py (stratégie Python)
+─────────────────────────────────────────────────
+   Problème : 2250 lignes dans un seul fichier = dette technique
+
+   Découpage recommandé en routers FastAPI :
+
+   admin_api.py (point d'entrée, ~100 lignes)
+   │
+   ├── routers/
+   │   ├── discovery.py    → /geographic/discover, /geographic/results
+   │   ├── sources.py      → /sources, /sources/{id}
+   │   ├── validation.py   → /geographic/validate-batch, /sources/{id}/validate
+   │   ├── config.py       → /admin/config/*
+   │   └── health.py       → /health, /admin/endpoints
+   │
+   └── services/
+       ├── resource_mapper.py   → mapping JSON → API contract (centraliser
+       │                          la logique aujourd'hui dispersée ligne ~940)
+       └── category_registry.py → registre des catégories V2
+
+   Exemple d'utilisation des routers :
+   ┌─────────────────────────────────────────────┐
+   │ # Dans admin_api.py                         │
+   │ from routers import discovery, sources      │
+   │ app.include_router(discovery.router)        │
+   │ app.include_router(sources.router)          │
+   └─────────────────────────────────────────────┘
+
+2.5 Plan d'implémentation (ordre recommandé)
+─────────────────────────────────────────────
+   ÉTAPE 1 (modèle) :
+     Modifier resource_models.py
+     → Ajouter ResourceCategory.SERVICE_SUPPORT
+     → Supprimer ASSOCIATION_LOCALE
+     → Ajouter champs scope_*, is_governmental, direct_link, action_type
+
+   ÉTAPE 2 (prompts) :
+     Modifier category_prompts.py
+     → Ajouter _prompt_service_support()
+     → Enrichir _prompt_procedure_plateforme() et _prompt_signalement_autorite()
+     → Supprimer _prompt_association_locale()
+
+   ÉTAPE 3 (mapping API) :
+     Centraliser le mapping dans un resource_mapper.py
+     → Éviter la duplication admin_api.py ~940 / resource_models.py
+
+   ÉTAPE 4 (refactoring optionnel) :
+     Découper admin_api.py en routers
+     → Uniquement si la maintenance devient difficile
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. PRIORITÉ DES MODIFICATIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   🔴 CRITIQUE   → resource_models.py : nouveaux champs scope + is_governmental
+   🔴 CRITIQUE   → category_prompts.py : nouveau prompt service_support
+   🟡 IMPORTANT  → category_prompts.py : enrichir procedure_plateforme
+   🟡 IMPORTANT  → admin_api.py ~940 : ajouter direct_link, scope dans mapping
+   🟢 OPTIONNEL  → Découpage admin_api.py en routers
+
+
+═══════════════════════════════════════════════════════════════
+BILAN D'IMPLÉMENTATION V2
+Rédigé par : GitHub Copilot (expert Python/FastAPI)
+Date : 19 février 2026
+═══════════════════════════════════════════════════════════════
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. CE QUI A ÉTÉ RÉALISÉ
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+4.1 Refactoring admin_api.py → architecture modulaire
+──────────────────────────────────────────────────────
+   ✅ admin_api.py réduit de 2250 → 130 lignes (thin entry point)
+      → Init FastAPI, CORS, security (verify_admin_token)
+      → 6 appels app.include_router()
+      → Gestionnaire global d'exceptions
+
+   ✅ Backup conservé : admin_api_monolith_backup.py
+
+   Structure finale créée :
+
+   backend/
+   ├── admin_api.py                 (~130 lignes — point d'entrée)
+   ├── routers/
+   │   ├── __init__.py
+   │   ├── health.py                (GET /, /favicon.ico, /health, /admin/endpoints)
+   │   ├── config.py                (/admin/config/*, /admin/workflow/status,
+   │   │                             /admin/export/rag-ready, /admin/sync-rag, UI)
+   │   ├── geographic.py            (/geographic/*, /geographic/validate-batch)
+   │   ├── discovery.py             (/discover-by-category/*, /discover-batch/*)
+   │   ├── sources.py               (/sources/*, /manage-rag-source)
+   │   └── admin_ops.py             (/admin/duplicates/*, /admin/deduplicate,
+   │                                 /admin/discovery-*, /admin/migration/*)
+   └── services/
+       ├── __init__.py
+       └── resource_mapper.py       (source unique de mapping JSON → API)
+
+4.2 Service de mapping centralisé (resource_mapper.py)
+───────────────────────────────────────────────────────
+   ✅ Suppression de la duplication qui existait aux lignes ~940 et ~1115
+      du monolithe. Désormais une seule fonction :
+
+      map_resource_to_api(resource_id, resource_data) → dict
+
+   ✅ Compatibilité ascendante : gère les deux conventions de nommage
+      (website → url, organization_name / organization → organization)
+
+   ✅ Prêt pour les champs V2 : direct_link, is_governmental,
+      scope (audience/violence/anonymous), platform_name, action_type
+
+4.3 Amorçage V2 dans le router discovery.py
+────────────────────────────────────────────
+   ✅ VALID_CATEGORIES_V2 = ["service_support", "procedure_plateforme",
+                              "signalement_autorite", "contact_urgence"]
+   ✅ Normalisation automatique : contact_urgence → service_support
+   ✅ Plateformes V2 par défaut : Discord, WhatsApp, Telegram, Snapchat
+   ✅ Cibles lean V2 : service_support=3, procedure_plateforme=5,
+                       signalement_autorite=4
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. CE QUI A ENSUITE ÉTÉ RÉALISÉ (modèles + prompts)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+5.1 core/resource_models.py — mis à jour ✅
+───────────────────────────────────────────
+   ✅ ResourceCategory.SERVICE_SUPPORT = "service_support" ajouté
+   ✅ ASSOCIATION_LOCALE supprimée (alias V1 conservés : CONTACT_URGENCE,
+      SERVICES_SUPPORT pour rétrocompatibilité)
+   ✅ Champs V2 ajoutés dans ResourceMetadata :
+        direct_link: str = ""
+        is_governmental: bool = False
+        scope_audience: str = ""     # "mineurs" | "tous"
+        scope_violence: str = ""     # "cyberviolence" | "tous"
+        scope_anonymous: bool = False
+        action_type: str = ""        # pour procedure_plateforme
+   ✅ CategoryTargets mis à jour (cibles V2 : service_support=3,
+      procedure_plateforme=5, signalement_autorite=4, total=12)
+   ✅ VALIDATION_CRITERIA_BY_CATEGORY mis à jour (critères V2,
+      suppression ASSOCIATION_LOCALE, alias CONTACT_URGENCE conservé)
+   ✅ Vérifié : instanciation ResourceMetadata avec tous les champs V2 OK
+
+5.2 core/category_prompts.py — refactorisé ✅
+──────────────────────────────────────────────
+   ✅ Dispatcher mis à jour :
+        service_support, procedure_plateforme, signalement_autorite (V2)
+        contact_urgence, services_support (alias V1 → redirigent vers service_support)
+   ✅ _prompt_service_support() créé (remplace _prompt_contact_urgence) :
+        · 10 champs demandés au LLM : LienDirect, SourceGouvernementale,
+          PublicVise, TypeViolence, SignalementAnonyme...
+        · 6 langues : FR, EN, ES, IT, DE, PT
+   ✅ _prompt_procedure_plateforme() enrichi :
+        · Discord, WhatsApp, Telegram, BeReal, Twitch explicitement cités
+        · Champs LienDirect et TypeAction ajoutés dans la sortie attendue
+   ✅ _prompt_signalement_autorite() enrichi :
+        · Champ SignalementAnonyme ajouté
+        · PHAROS, cybermalveillance.gouv.fr cités comme exemples
+   ✅ _prompt_association_locale() → stub deprecated (redirige vers service_support)
+   ✅ _prompt_services_support() → stub deprecated (redirige vers service_support)
+   ✅ PRIORITY_PLATFORMS séparé en PRIORITY_PLATFORMS_SOCIAL (8)
+      et PRIORITY_PLATFORMS_MESSAGING (3 : Discord, WhatsApp, Telegram)
+   ✅ Vérifié : tous les champs V2 présents dans les prompts FR
+
+5.3 Nettoyage du dossier core/ ✅
+──────────────────────────────────
+   ✅ core/workflow_manager_extensions.py → déplacé dans archive/
+      (méthodes déjà toutes présentes dans workflow_manager.py)
+   ✅ core/content_vectorizer.py → déplacé dans archive/
+      (module RAG PostgreSQL non intégré, jamais importé)
+   ✅ admin_api_monolith_backup.py → déplacé dans archive/
+   ✅ core/ final : 14 fichiers, tous utiles et importés
+
+
+
+═══════════════════════════════════════════════════════════════
+REVUE DE CODE — BACKEND V2
+Rédigée par : GitHub Copilot (expert en revue de code)
+Date : 19 février 2026
+═══════════════════════════════════════════════════════════════
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ POINTS POSITIFS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Architecture
+────────────
+  ✔ Le découpage monolithe → 6 routers est propre et cohérent.
+    Chaque router a une responsabilité claire, les tailles sont
+    raisonnables (93–617 lignes).
+
+  ✔ resource_mapper.py comme source unique de vérité pour le
+    mapping JSON → API est la bonne décision.
+
+  ✔ Le pattern try/except systématique avec logging évite les
+    crashs silencieux.
+
+  ✔ La structure des réponses {success, message, data} est
+    cohérente sur l'ensemble de l'API.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔴 PROBLÈMES CRITIQUES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. L'authentification est en réalité désactivée
+────────────────────────────────────────────────
+  Dans routers/sources.py, _get_auth() est défini mais jamais
+  passé en Depends() :
+
+    # Ce pattern importe la fonction mais ne l'injecte pas
+    verify_admin_token = _get_auth()
+
+  Résultat : POST /sources/validate, POST /sources/modify-and-validate,
+  et tous les endpoints POST ne sont PAS protégés. N'importe qui
+  peut modifier des ressources sans token.
+
+  Correction minimale dans chaque endpoint sensible :
+    @router.post("/sources/validate")
+    async def validate_critical_source(request: Request, admin=Depends(verify_admin_token)):
+
+2. allowed_fields dans modify_and_validate_source est V1
+─────────────────────────────────────────────────────────
+  Dans sources.py :
+    allowed_fields = ["organization_name", "country_name", "phone",
+                      "email", "website", "description"]
+
+  Les champs V2 (direct_link, is_governmental, scope_*, action_type)
+  sont absents → une modification V2 sera silencieusement ignorée.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🟡 PROBLÈMES IMPORTANTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+3. api_adapter.py est le nouveau monolithe
+───────────────────────────────────────────
+  2071 lignes — plus que le monolithe original avant découpage
+  des routers. C'est désormais la dette technique principale
+  du projet.
+
+4. response_service.py (216 lignes) n'est jamais utilisé
+─────────────────────────────────────────────────────────
+  ResponseService, ErrorHandler, OperationLogger sont importés
+  dans admin_api.py mais aucun router ne les utilise. Tous les
+  routers reconstruisent manuellement {"success": False,
+  "message": str(e)} à la main. La dette que ce service devait
+  effacer existe toujours, en double.
+
+5. Aucun modèle Pydantic sur les endpoints POST
+────────────────────────────────────────────────
+  Tous les handlers font data = await request.json() suivi de
+  data.get("field"). Conséquences :
+    · Swagger/OpenAPI ne documente pas les paramètres attendus
+    · Un champ manquant produit une erreur dans la logique métier
+      plutôt qu'un 422 Unprocessable Entity propre
+    · Les types ne sont pas validés
+
+6. Objet scope imbriqué vs champs plats — incohérence
+──────────────────────────────────────────────────────
+  resource_mapper.py retourne :
+    "scope": {"audience": ..., "violence": ..., "anonymous": ...}
+
+  Mais sources.py dans get_source_by_id fait .update({"metadata": ...})
+  qui écrase metadata déjà retourné par map_resource_to_api.
+  Double inclusion garantie côté frontend.
+
+  À noter : l'interface TypeScript prévue en étape 1 utilise
+  des champs plats (scope_audience, scope_violence, scope_anonymous).
+  Le mapper devra être aligné pour éviter une désérialisation
+  manuelle côté frontend.
+
+7. constants.py non mis à jour en V2
+──────────────────────────────────────
+  DISCOVERY_CATEGORIES contient encore contact_urgence comme clé
+  principale, pas service_support. Incohérence avec
+  VALID_CATEGORIES_V2 dans discovery.py.
+
+8. country_labels dupliqué
+───────────────────────────
+  Le dictionnaire {"FR": "France", "ES": "Espagne", ...} existe
+  dans sources.py et probablement ailleurs. Il devrait être dans
+  constants.py.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🟢 POINTS D'AMÉLIORATION MINEURS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+9.  Mélange return dict / return JSONResponse
+    Certains handlers retournent un dict (FastAPI sérialise),
+    d'autres un JSONResponse explicite. Ce mélange complique
+    l'écriture de tests (TestClient se comporte différemment).
+
+10. platform_name par défaut hardcodé
+    Dans discovery.py : data.get("platform_name", "Instagram")
+    Si le champ est absent, Instagram est utilisé en silence.
+    Mieux vaut lever une HTTPException(400).
+
+11. modify_and_validate_source contourne la validation
+    L'endpoint permet de passer directement de critical_pending
+    à rag_ready sans passer par criteria_manager
+    .verify_all_criteria_checked — bypass de la logique métier.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RÉCAPITULATIF DES PRIORITÉS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Priorité │ Problème                                   │ Fichier(s)
+  ─────────┼────────────────────────────────────────────┼──────────────────────
+  🔴        │ Auth non appliquée (Depends manquant)       │ sources.py, admin_ops.py, discovery.py
+  🔴        │ allowed_fields V1 dans modify_and_validate  │ sources.py
+  🟡        │ api_adapter.py 2071 lignes                  │ core/api_adapter.py
+  🟡        │ response_service.py inutilisé               │ tous les routers
+  🟡        │ Pas de modèles Pydantic sur les POST         │ tous les routers
+  🟡        │ scope imbriqué ≠ champs plats TypeScript     │ resource_mapper.py
+  🟡        │ DISCOVERY_CATEGORIES V1 dans constants       │ constants.py
+  🟢        │ country_labels à centraliser                 │ constants.py
+  🟢        │ Mélange dict / JSONResponse                  │ tous les routers
+  🟢        │ platform_name par défaut silencieux          │ discovery.py
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SYNTHÈSE : PRIORITÉS TRAITÉES EN SESSION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Les points 🔴 critiques et les 🟡 importants corrigeables sans
+  risque de régression ont été implémentés et vérifiés (syntaxe +
+  tests d'import). Voici le bilan point par point :
+
+  🔴 Auth non appliquée (Depends manquant)                   ✅ CORRIGÉ
+  ──────────────────────────────────────────────────────────
+  Créé : routers/auth.py — module centralisé contenant
+  verify_admin_token avec HTTPBearer. Supprime l'import
+  circulaire qui existait via _get_auth().
+
+  Depends(verify_admin_token) injecté sur 13 endpoints POST :
+    · sources.py      : validate, format-rag, modify-and-validate,
+                        update-extracted-data, verify-criteria,
+                        manage-rag-source (6 endpoints)
+    · admin_ops.py    : cleanup_duplicates, mark_analyzed,
+                        deduplicate, migrate_from_unified (4 endpoints)
+    · discovery.py    : discover-by-category, category-multi-countries,
+                        all-platforms, language-complete (4 endpoints)
+    · geographic.py   : discover (corrige Depends(lambda: None)),
+                        clear-cache, validate-batch (3 endpoints)
+
+  admin_api.py nettoyé : HTTPBearer, HTTPAuthorizationCredentials,
+  verify_admin_token inline → tous supprimés, remplacés par
+  from routers.auth import verify_admin_token.
+
+  🔴 allowed_fields V1 dans modify_and_validate_source        ✅ CORRIGÉ
+  ──────────────────────────────────────────────────────────
+  allowed_fields étendu aux 7 champs V2 :
+    direct_link, is_governmental, action_type, platform_name,
+    scope_audience, scope_violence, scope_anonymous.
+
+  🟡 scope imbriqué ≠ champs plats TypeScript                 ✅ CORRIGÉ
+  ──────────────────────────────────────────────────────────
+  resource_mapper.py expose désormais les deux formes :
+    · scope_audience, scope_violence, scope_anonymous (plats)
+      → attendus par l'interface TypeScript Resource
+    · scope: {audience, violence, anonymous} (imbriqué)
+      → conservé pour compatibilité interne
+
+  🟡 DISCOVERY_CATEGORIES V1 dans constants.py                ✅ CORRIGÉ
+  ──────────────────────────────────────────────────────────
+  DISCOVERY_CATEGORIES mis à jour :
+    · service_support      (V2, principal)
+    · procedure_plateforme (V2, enrichi)
+    · signalement_autorite (V2, enrichi)
+    · contact_urgence      (alias V1, alias_of: "service_support")
+    · association_locale   supprimée
+
+  🟢 country_labels à centraliser                             ✅ CORRIGÉ
+  ──────────────────────────────────────────────────────────
+  Ajout de COUNTRY_LABELS (21 pays) dans constants.py.
+  sources.py : dict local supprimé → import COUNTRY_LABELS.
+
+  Points NON traités (trop risqués sans suite de tests) :
+  ──────────────────────────────────────────────────────────
+  ⏳ 🟡 api_adapter.py 2071 lignes → refactoring en sous-couches
+  ⏳ 🟡 response_service.py inutilisé → intégration dans les routers
+  ⏳ 🟡 Pydantic sur les POST → migration handler par handler
+  ⏳ 🟢 Mélange dict / JSONResponse → harmonisation
+  ⏳ 🟢 platform_name par défaut silencieux → HTTPException(400)
+
+  Tous vérifiés : python -m py_compile ✅ sur les 8 fichiers
+  modifiés + test d'import fonctionnel des nouvelles dépendances.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6. CE QUI RESTE À FAIRE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   🟡 IMPORTANT — frontend (adaptation V2)
+      Voir section détaillée ci-dessous.
+
+
+═══════════════════════════════════════════════════════════════
+MISE EN PRODUCTION — ANALYSE EXPERT PROJET IA
+Rédigée par : GitHub Copilot (expert projet IA / production)
+Date : 19 février 2026
+═══════════════════════════════════════════════════════════════
+
+  Ce projet a les caractéristiques d'un backend IA en fin de
+  phase prototype : la logique est solide, mais plusieurs
+  hypothèses de développement sont incompatibles avec une mise
+  en production réelle. Voici les interventions par ordre
+  de criticité.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+P0 — BLOQUANTS ABSOLUS (ne pas déployer sans corriger)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  1. Sécurité : CORS et token de développement exposés
+  ────────────────────────────────────────────────────
+  Dans admin_api.py :
+    allow_origins=["*"]        ← n'importe quel domaine peut appeler l'API
+    ADMIN_TOKEN_DEV            ← token lisible dans constants.py (versionné Git ?)
+
+  En production :
+    · CORS restreint aux domaines autorisés (frontend uniquement)
+    · Token admin via variable d'environnement uniquement,
+      jamais dans le code source
+    · Ajouter ADMIN_TOKEN au .env et s'assurer que .env est dans .gitignore
+
+  2. Serveur lancé en mode --reload (développement)
+  ──────────────────────────────────────────────────
+  start_server.sh :
+    uvicorn admin_api:app --reload ...   ← surveille les fichiers, risque de
+                                            redémarrage intempestif
+
+  En production :
+    uvicorn admin_api:app --workers 4 --host 0.0.0.0 --port 8000
+  Ou mieux : via Gunicorn + Uvicorn workers :
+    gunicorn admin_api:app -w 4 -k uvicorn.workers.UvicornWorker
+
+  3. Stockage JSON flat sans isolation des écritures concurrentes
+  ───────────────────────────────────────────────────────────────
+  working_resources.json (831 lignes) et rag_resources.json sont
+  lus/écrits directement sans verrou. Avec plusieurs workers
+  (--workers 4), les écritures simultanées corrompent le fichier.
+
+  Solution minimale : asyncio.Lock() ou threading.Lock() dans
+  workflow_manager.py autour de _save_json().
+
+  Solution pérenne : migrer vers SQLite (stdlib Python, zéro
+  dépendance) ou PostgreSQL si accès concurrent élevé attendu.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+P1 — RISQUES OPÉRATIONNELS (déploiement fragile sans cela)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  4. Appels LLM synchrones dans des endpoints async
+  ──────────────────────────────────────────────────
+  OpenRouterClient._make_request() utilise requests.post()
+  (bibliothèque synchrone) à l'intérieur d'un handler FastAPI
+  async. Cela bloque l'event loop le temps de la requête HTTP
+  vers OpenRouter, rendant le serveur non réactif pour tous
+  les autres appels pendant ce laps de temps.
+
+  Correction :
+    · Remplacer requests.post par aiohttp.ClientSession.post()
+      (déjà dans requirements.txt — c'est la bonne dépendance)
+    · Ou utiliser asyncio.to_thread() comme solution minimale :
+        response = await asyncio.to_thread(requests.post, ...)
+
+  5. Aucune limite de débit sur les endpoints LLM
+  ─────────────────────────────────────────────────
+  POST /discover-by-category/{category} peut être appelé en boucle
+  sans restriction. Une seule découverte peut coûter plusieurs
+  appels LLM. Sans rate limiting, le quota API (Gemini/OpenRouter)
+  peut être épuisé en quelques minutes.
+
+  Solution minimale : slowapi (compatible FastAPI/Starlette) :
+    limiter = Limiter(key_func=get_remote_address)
+    @router.post("/discover-by-category/{category}")
+    @limiter.limit("10/minute")
+
+  6. Pas de gestion de l'épuisement du quota LLM
+  ─────────────────────────────────────────────────
+  LLMManager._stats comptabilise les appels en mémoire, mais
+  les stats sont perdues au redémarrage et aucune alerte n'existe
+  si le quota est épuisé. En production, un appel LLM qui échoue
+  silencieusement donne l'impression que la découverte "tourne"
+  sans jamais retourner de ressources.
+
+  Interventions :
+    · Persister les stats LLM dans un fichier JSON ou une table
+    · Ajouter un endpoint GET /admin/llm/stats exposant provider,
+      total_calls, success_rate, last_error
+    · Exposer le quota restant via l'endpoint /health (GET /health
+      actuel ne teste pas la connexion LLM)
+
+  7. Pas de processus superviseur en cas de crash
+  ─────────────────────────────────────────────────
+  Si uvicorn crashe, le service est mort jusqu'à redémarrage manuel.
+
+  Solution selon l'infrastructure :
+    · Systemd service unit (Linux bare metal)
+    · Docker + restart: always (containerisation)
+    · PM2 (si l'infra est déjà Node.js)
+
+  8. Sauvegarde des données JSON absente
+  ───────────────────────────────────────
+  working_resources.json contient l'ensemble des ressources
+  validées. Il n'existe aucune stratégie de backup. Une écriture
+  corrompue ou une suppression accidentelle efface tout le travail
+  de découverte et de validation.
+
+  Minimum viable :
+    · Cron quotidien : cp working_resources.json backups/$(date +%Y%m%d).json
+    · Conserver 30 jours de backups
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+P2 — OBSERVABILITÉ (qualifier les incidents en production)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  9. Logs non structurés
+  ───────────────────────
+  Les logs (backend.log, server.log) sont des chaînes libres.
+  En production, un agrégateur de logs (Loki, CloudWatch, etc.)
+  ne peut pas filtrer ou alerter sur des champs non structurés.
+
+  Migration vers JSON logging en 5 lignes :
+    import logging, json
+    class JsonFormatter(logging.Formatter):
+        def format(self, record):
+            return json.dumps({"level": record.levelname,
+                               "msg": record.getMessage(),
+                               "ts": self.formatTime(record)})
+
+  10. Endpoint /health insuffisant
+  ─────────────────────────────────
+  GET /health retourne uniquement {"status": "healthy"} sans
+  vérifier l'état des dépendances réelles.
+
+  Un health check production doit tester :
+    · Lecture/écriture working_resources.json → {storage: "ok"}
+    · Connexion LLM (test_connection léger) → {llm: "ok" | "degraded"}
+    · Mémoire/espace disque si pertinent
+
+  Cela permet à un load balancer ou à Kubernetes de sortir le
+  pod de la rotation si le LLM est indisponible.
+
+  11. Aucune traçabilité des coûts LLM
+  ──────────────────────────────────────
+  tokens_used est capturé dans LLMResponse mais jamais agrégé
+  ni loggé. Sur un projet IA, le suivi des coûts est une
+  exigence opérationnelle de base.
+
+  Minimum :
+    · Logger tokens_used + provider + endpoint dans chaque appel
+    · Rapport hebdomadaire via GET /admin/llm/usage-report
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+P3 — QUALITÉ & MAINTENABILITÉ (dette technique à planifier)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  12. Tests d'intégration uniquement, pas de tests unitaires
+  ───────────────────────────────────────────────────────────
+  Le dossier tests/ contient 6 fichiers qui appellent l'API
+  via requests (serveur doit tourner). Il n'existe aucun test
+  unitaire avec mocking du LLM ni du workflow_manager.
+
+  Conséquence : impossible de valider un changement sans démarrer
+  le serveur et dépenser du quota LLM.
+
+  Priorité : tests unitaires sur resource_mapper.py et
+  category_prompts.py (logique pure, sans dépendances externes).
+
+  13. config.json duplique constants.py
+  ───────────────────────────────────────
+  La liste des pays et langues existe dans constants.py (code)
+  ET dans config.json (fichier). Les deux divergent déjà
+  (config.json a une structure "languages" imbriquée, constants.py
+  a COUNTRIES_CONFIG à plat).
+
+  Source unique recommandée : config.json chargé au démarrage
+  dans constants.py via json.load() — le fichier devient
+  l'unique référence, modifiable sans recodage.
+
+  14. Singleton LLMManager non thread-safe
+  ─────────────────────────────────────────
+  get_llm_manager() utilise un global _default_llm_manager.
+  Avec plusieurs workers, chaque worker crée son propre singleton
+  en mémoire. switch_provider() modifie l'état global partagé
+  en cours d'exécution, ce qui peut provoquer des appels avec
+  le mauvais provider sur les requêtes concurrentes.
+
+  Correction : instancier LLMManager dans le lifespan FastAPI
+  et l'injecter via Depends() plutôt que via un global.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PLAN DE MISE EN PRODUCTION (ordre recommandé)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Sprint 0 (bloquants — 1 jour)
+  ──────────────────────────────
+    □ CORS restreint + token via .env uniquement
+    □ Verrou sur _save_json() dans workflow_manager.py
+    □ start_server.sh : retirer --reload, ajouter --workers
+
+  Sprint 1 (stabilité — 2-3 jours)
+  ──────────────────────────────────
+    □ OpenRouterClient : requests.post → aiohttp
+    □ Rate limiting sur les endpoints LLM (slowapi)
+    □ Superviseur de processus (systemd ou Docker)
+    □ Cron backup des JSON (working_resources.json)
+
+  Sprint 2 (observabilité — 2 jours)
+  ────────────────────────────────────
+    □ JSON logging sur tous les handlers
+    □ GET /health étendu (storage + LLM status)
+    □ Persistance et reporting des tokens utilisés
+
+  Sprint 3 (dette technique — 3-5 jours, planifiable)
+  ─────────────────────────────────────────────────────
+    □ Tests unitaires resource_mapper + category_prompts
+    □ Fusion config.json ↔ constants.py (source unique)
+    □ LLMManager via lifespan FastAPI (fin du singleton global)
+    □ Migration optionnelle JSON → SQLite si concurrence élevée
+
+  Durée estimée Sprint 0+1 : ~1 semaine — suffisant pour
+  un déploiement stable en accès restreint (équipe interne).
+  Sprint 2+3 : nécessaires avant exposition publique.
+
+
+═══════════════════════════════════════════════════════════════
+PLAN D'ADAPTATION FRONTEND — VERSION 2
+Rédigé par : GitHub Copilot (expert Python/FastAPI)
+Date : 19 février 2026
+═══════════════════════════════════════════════════════════════
+
+Principe directeur
+──────────────────
+  Le backend V2 est rétrocompatible : les ressources V1 qui n'ont
+  pas les nouveaux champs retournent des valeurs vides ("", false).
+  Le frontend doit donc afficher les nouveaux champs de façon
+  conditionnelle (si le champ est non vide / non false).
+
+  Ordre absolu des étapes : contrat de données → composant de base
+  → pages → hooks. Ne jamais modifier une page avant que les types
+  et le composant de base soient à jour.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ÉTAPE 1 — services/api.ts  (contrat de données TypeScript)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Fichier : frontend/src/services/api.ts
+  Priorité : 🔴 CRITIQUE — à faire EN PREMIER
+
+  1.1  Ajouter les champs V2 à l'interface Resource
+  ─────────────────────────────────────────────────
+  Tous optionnels (? ou valeur par défaut) pour assurer la
+  compatibilité avec les ressources V1 déjà en base.
+
+  Champs à ajouter dans Resource :
+
+    // Champs V2 communs
+    direct_link?: string          // Lien direct vers formulaire/page d'aide
+    is_governmental?: boolean     // Source gouvernementale officielle
+
+    // Champs V2 scope (service_support + signalement_autorite)
+    scope_audience?: string       // "mineurs" | "tous"
+    scope_violence?: string       // "cyberviolence" | "tous"
+    scope_anonymous?: boolean     // Signalement anonyme possible
+
+    // Champs V2 procedure_plateforme
+    platform_name?: string        // Nom de la plateforme
+    action_type?: string          // "signalement" | "blocage" | "suppression_contenu"
+
+  1.2  Ajouter un mapping de labels pour les catégories V2
+  ─────────────────────────────────────────────────────────
+  Constante à exporter depuis api.ts (ou un fichier constants.ts) :
+
+    export const CATEGORY_LABELS: Record<string, string> = {
+      service_support:      "Service d'assistance",
+      procedure_plateforme: "Procédure plateforme",
+      signalement_autorite: "Signalement autorité",
+      // Alias V1 (rétrocompat)
+      contact_urgence:      "Contact urgence",
+      services_support:     "Service support",
+    }
+
+    export const CATEGORY_ICONS: Record<string, string> = {
+      service_support:      "🛡️",
+      procedure_plateforme: "🛠️",
+      signalement_autorite: "⚖️",
+      contact_urgence:      "📞",
+      services_support:     "🤝",
+    }
+
+  Validation : pas de compilation TypeScript en erreur.
+  Aucune page ne doit changer à cette étape.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ÉTAPE 2 — ResourceCard.tsx  (composant de base)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Fichier : frontend/src/components/features/ResourceCard.tsx
+  Priorité : 🔴 CRITIQUE — après étape 1
+
+  État actuel :
+    - Badge catégorie (texte brut, fond violet)
+    - Lien "Voir le site officiel" (resource.url)
+    - Contact : pays, téléphone, email
+
+  Modifications à apporter :
+
+  2.1  Badge catégorie — utiliser CATEGORY_LABELS + CATEGORY_ICONS
+  ────────────────────────────────────────────────────────────────
+  Avant :
+    {resource.category}
+  Après :
+    {CATEGORY_ICONS[resource.category] ?? "📌"} {CATEGORY_LABELS[resource.category] ?? resource.category}
+
+  2.2  Badge "Gouvernemental" conditionnel
+  ─────────────────────────────────────────
+  Afficher uniquement si is_governmental === true :
+    <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-800">
+      🏛️ Officiel
+    </span>
+
+  2.3  Lien direct (direct_link) vs site général (url)
+  ──────────────────────────────────────────────────────
+  Afficher direct_link en priorité comme lien d'action (CTA fort),
+  url en secondaire comme lien institutionnel.
+  Règle : n'afficher que si la valeur est non vide.
+
+    {resource.direct_link && (
+      <a href={resource.direct_link} ...>→ Accès direct (formulaire / aide)</a>
+    )}
+    {resource.url && (
+      <a href={resource.url} ...>🔗 Site officiel</a>
+    )}
+
+  2.4  Badges scope (audience / violence / anonymat)
+  ───────────────────────────────────────────────────
+  Tous conditionnels (afficher seulement si non vide) :
+    - scope_audience  : badge "👶 Mineurs" ou "👥 Tous publics"
+    - scope_violence  : badge "💻 Cyberviolence" ou "⚠️ Toutes violences"
+    - scope_anonymous : badge "🕵️ Anonyme" si true
+
+  2.5  Champs spécifiques procedure_plateforme
+  ─────────────────────────────────────────────
+  Afficher si non vides, en dessous de la description :
+    - platform_name : "Plateforme : Discord"
+    - action_type   : badge "Type : signalement"
+
+  Validation : ResourceCard s'affiche sans erreur avec une ressource
+  V1 (champs V2 absents) ET avec une ressource V2 complète.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ÉTAPE 3 — OverviewStep.tsx  (labels catégories V2)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Fichier : frontend/src/pages/ValidationPage/OverviewStep.tsx
+  Priorité : 🟡 IMPORTANT — après étape 2
+
+  État actuel :
+    Les catégories sont affichées telles quelles ("contact_urgence",
+    "association_locale"...) dans la section "Par Catégorie".
+
+  Modification unique :
+    Remplacer le texte brut par CATEGORY_LABELS + CATEGORY_ICONS :
+
+      {Object.entries(stats.data?.by_category || {}).map(([cat, count]) => (
+        <Button
+          key={cat}
+          label={`${CATEGORY_ICONS[cat] ?? "📌"} ${CATEGORY_LABELS[cat] ?? cat} (${count})`}
+          onClick={() => handleCategoryClick(cat)}
+          variant="secondary"
+        />
+      ))}
+
+  Validation : les catégories V2 s'affichent avec leur label lisible.
+  Les catégories V1 éventuellement encore en base s'affichent toujours
+  (fallback sur le nom brut).
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ÉTAPE 4 — ReviewStep.tsx  (filtres scope optionnels)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Fichier : frontend/src/pages/ValidationPage/ReviewStep.tsx
+  Priorité : 🟢 OPTIONNEL — après étape 3
+
+  État actuel :
+    Filtre par pays et catégorie. Liste de ResourceCard avec
+    checkboxes. Validation batch.
+
+  Améliorations possibles (non bloquantes) :
+  ─────────────────────────────────────────
+  a) Filtre "Gouvernemental uniquement"
+     Toggle booléen → filtre resources.filter(r => r.is_governmental)
+
+  b) Filtre "Public visé"
+     Select : Tous | Mineurs | Tous publics
+     → filtre sur r.scope_audience
+
+  c) Indicateur rapide sur chaque carte
+     Dans le children de ResourceCard, afficher un mini-badge
+     scope_anonymous si true : "🕵️ Anonyme"
+
+  Ces filtres sont tous côté client (pas de nouveau appel API).
+
+  Validation : les filtres existants (pays, catégorie) continuent
+  de fonctionner. Les nouveaux filtres sont additifs.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RÉCAPITULATIF & ORDRE D'EXÉCUTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Étape │ Fichier                          │ Priorité │ Dépend de
+  ──────┼──────────────────────────────────┼──────────┼──────────
+    1   │ services/api.ts                  │ 🔴        │ —
+    2   │ components/features/ResourceCard │ 🔴        │ Étape 1
+    3   │ pages/ValidationPage/OverviewStep│ 🟡        │ Étape 1
+    4   │ pages/ValidationPage/ReviewStep  │ 🟢        │ Étapes 2+3
+
+  Aucun nouveau hook n'est nécessaire : les endpoints backend
+  retournent déjà les nouveaux champs — il suffit de les afficher.
+
+  Aucune nouvelle route React n'est nécessaire pour la V2 de base.
+
+  Durée estimée : Étapes 1+2 = ~1h | Étape 3 = 20 min | Étape 4 = 1h
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+7. ÉVALUATION GLOBALE (expert Python/FastAPI)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+   Points positifs
+   ───────────────
+   ✔ Le refactoring en routers est la bonne décision : FastAPI est
+     conçu pour cette architecture. Chaque router est testable
+     indépendamment et lisible en moins de 300 lignes.
+
+   ✔ La centralisation du mapping dans resource_mapper.py élimine
+     une source réelle de bugs (les deux versions divergeaient déjà
+     entre les lignes ~940 et ~1115 du monolithe).
+
+   ✔ La rétrocompatibilité est préservée : le backup du monolithe
+     existe, et les alias (contact_urgence → service_support) sont
+     en place dans discovery.py.
+
+   Points de vigilance
+   ────────────────────
+   ⚠ Le paramètre admin_id est hardcodé à "admin_user" dans sources.py
+     et admin_ops.py. Il faudra injecter verify_admin_token proprement
+     via Depends() dans chaque endpoint quand l'auth sera renforcée.
+
+   ⚠ resource_models.py et category_prompts.py n'ont pas encore été
+     mis à jour : les nouvelles ressources découvertes via discovery.py
+     (V2) seront stockées sans les champs scope_*, is_governmental,
+     action_type. Les données seront valides mais incomplètes jusqu'à
+     l'implémentation de l'étape CRITIQUE.
+
+   ⚠ Aucun test unitaire n'existe sur les routers. À terme, chaque
+     router devrait avoir son propre test avec TestClient FastAPI.
+
+   Verdict
+   ───────
+   L'architecture cible est atteinte pour la couche infrastructure
+   (routers + service mapper). La V2 est techniquement déployable :
+   les anciens endpoints sont entièrement préservés dans les routers.
+   La prochaine priorité absolue est la mise à jour des modèles et
+   des prompts, qui sont le cœur fonctionnel de la V2.
 

@@ -61,28 +61,61 @@ API_DESCRIPTION = "API d'administration des ressources critiques avec système d
 LEAN_MAX_COUNTRIES_PER_LANGUAGE = 5
 LEAN_MAX_RESOURCES_PER_COUNTRY = 16
 
-# === CATÉGORIES DE DÉCOUVERTE ===
+# === CATÉGORIES DE DÉCOUVERTE V2 ===
+# V2 : association_locale supprimée, service_support ajouté.
+# contact_urgence conservé comme alias backward compat.
 DISCOVERY_CATEGORIES = {
-    "contact_urgence": {
-        "label": "Contacts d'urgence",
-        "description": "Numéros d'urgence nationaux et services de police",
-        "default_count": 3
+    "service_support": {
+        "label": "Services d'assistance",
+        "description": "Services nationaux d'aide aux victimes de cyberviolence (priorité gouvernementale)",
+        "default_count": 3,
+        "v2": True,
     },
     "procedure_plateforme": {
         "label": "Procédures plateforme",
-        "description": "Procédures spécifiques aux plateformes digitales",
-        "default_count": 4
+        "description": "Procédures officielles des plateformes (réseaux sociaux, messageries)",
+        "default_count": 5,
+        "v2": True,
     },
     "signalement_autorite": {
         "label": "Signalement autorités",
-        "description": "Autorités officielles de signalement",
-        "default_count": 3
+        "description": "Autorités légales de signalement (police, PHAROS, cybermalveillance.gouv.fr)",
+        "default_count": 4,
+        "v2": True,
     },
-    "association_locale": {
-        "label": "Associations locales",
-        "description": "Associations locales spécialisées cyber-harcèlement",
-        "default_count": 6
-    }
+    # Alias V1 — backward compat uniquement, redirige vers service_support
+    "contact_urgence": {
+        "label": "Contact urgence (alias V1)",
+        "description": "Alias de service_support — utiliser service_support en V2",
+        "default_count": 3,
+        "v2": False,
+        "alias_of": "service_support",
+    },
+}
+
+# === LABELS PAYS (source unique — ne pas dupliquer dans les routers) ===
+COUNTRY_LABELS: dict = {
+    "FR": "France",
+    "BE": "Belgique",
+    "CH": "Suisse",
+    "LU": "Luxembourg",
+    "MC": "Monaco",
+    "ES": "Espagne",
+    "IT": "Italie",
+    "DE": "Allemagne",
+    "AT": "Autriche",
+    "PT": "Portugal",
+    "BR": "Brésil",
+    "CA": "Canada",
+    "US": "États-Unis",
+    "GB": "Royaume-Uni",
+    "IE": "Irlande",
+    "AU": "Australie",
+    "MX": "Mexique",
+    "AR": "Argentine",
+    "CO": "Colombie",
+    "CL": "Chili",
+    "SM": "Saint-Marin",
 }
 
 # === STATUTS DE WORKFLOW ===

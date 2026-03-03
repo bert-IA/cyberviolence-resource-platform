@@ -1,70 +1,43 @@
-import { useState } from 'react'
+import { useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useDiscoverResources } from '../hooks/useDiscoverResources'
-import { DiscoveryForm } from '../components/features/DiscoveryForm'  // Défini dans Étape 3 partie 1
+import { DiscoveryForm } from '../components/features/DiscoveryForm'
 import { DiscoveredResourcesList } from '../components/features/DiscoveredResourcesList'
-import { ValidationActions } from '../components/features/ValidationActions'
-import { useValidateBatch } from '../hooks/useValidateBatch'
 import { LoadingSpinner } from '../components/ui/LoadingSpinner'
 import { ErrorMessage } from '../components/ui/ErrorMessage'
+import type { DiscoveryFilters } from '../services/api'
 
+// Décision : useValidateBatch, ValidationActions et hiddenIds supprimés.
+// Les actions (approuver/rejeter) appartiennent à ValidationPage.
+// DiscoveryPage est désormais une page de rapport de mission — lecture seule.
 
 export function DiscoveryPage() {
     const discovery = useDiscoverResources()
-    const validateBatch = useValidateBatch()
+    const navigate  = useNavigate()
 
-    // 🆕 État local pour masquer les ressources traitées
-    const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set())
+    // Mesure de la durée réelle côté frontend
+    // useRef car on n'a pas besoin de déclencher un re-render au démarrage
+    const startTimeRef = useRef<number | null>(null)
+    const elapsedRef   = useRef<string | null>(null)
 
-    const handleSearch = (filters: any) => {
-        setHiddenIds(new Set())
-        discovery.mutate(filters)
-    }
-
-    const handleApprove = (resourceId: string) => {
-        // 🎯 Optimistic update : masquer immédiatement
-        setHiddenIds(prev => new Set(prev).add(resourceId))
-
-        validateBatch.mutate({
-            resource_ids: [resourceId],
-            action: 'approve'
-        }, {
-            onError: () => {
-                // ↩️ Rollback : réafficher en cas d'erreur
-                setHiddenIds(prev => {
-                    const next = new Set(prev)
-                    next.delete(resourceId)
-                    return next
-                })
+    const handleSearch = (filters: DiscoveryFilters) => {
+        startTimeRef.current = Date.now()
+        elapsedRef.current   = null
+        discovery.mutate(filters, {
+            onSuccess: () => {
+                if (startTimeRef.current) {
+                    const seconds = Math.round((Date.now() - startTimeRef.current) / 1000)
+                    elapsedRef.current = `${seconds}s`
+                }
             }
         })
     }
 
-    const handleReject = (resourceId: string) => {
-        // � Optimistic update : masquer immédiatement
-        setHiddenIds(prev => new Set(prev).add(resourceId))
-
-        validateBatch.mutate({
-            resource_ids: [resourceId],
-            action: 'reject'
-        }, {
-            onError: () => {
-                // ↩️ Rollback : réafficher en cas d'erreur
-                setHiddenIds(prev => {
-                    const next = new Set(prev)
-                    next.delete(resourceId)
-                    return next
-                })
-            }
-        })
-    }
-
-    // 🆕 Filtrer les ressources visibles
-    const visibleResources = discovery.data?.newly_discovered?.filter(
-        r => !hiddenIds.has(r.id)
-    ) || []
+    const allResources = discovery.data?.newly_discovered || []
+    const newCount     = allResources.filter(r => r.is_new === true).length
 
     return (
-        <div className="max-w-7xl mx-auto p-6">
+        <div className="p-6">
             {/* Header */}
             <div className="mb-8">
                 <h1 className="text-3xl font-bold text-gray-900">
@@ -86,6 +59,7 @@ export function DiscoveryPage() {
 
                 {/* Résultats (2/3 droite) */}
                 <div className="lg:col-span-2">
+
                     {/* État : Chargement */}
                     {discovery.isPending && <LoadingSpinner />}
 
@@ -99,31 +73,37 @@ export function DiscoveryPage() {
 
                     {/* État : Succès */}
                     {discovery.data && (
-                        <>
-                            <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-                                <p className="text-green-800 font-medium">
-                                    ✅ {discovery.data.total_discovered} ressource(s) découverte(s)
-                                </p>
-                                {discovery.data.estimated_duration && (
-                                    <p className="text-sm text-green-700 mt-1">
-                                        Durée estimée : {discovery.data.estimated_duration}
+                        <div className="space-y-4">
+                            {/* Bandeau de résumé */}
+                            <div className="p-4 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between gap-4">
+                                <div>
+                                    <p className="text-green-800 font-medium">
+                                        ✅ Découverte terminée — {allResources.length} ressource(s) analysée(s)
                                     </p>
+                                    {/* Durée RÉELLE mesurée côté frontend, pas l'estimation du backend */}
+                                    {elapsedRef.current && (
+                                        <p className="text-sm text-green-700 mt-0.5">
+                                            Durée : {elapsedRef.current}
+                                        </p>
+                                    )}
+                                </div>
+                                {/* Bouton de redirection vers ValidationPage si nouvelles ressources */}
+                                {newCount > 0 && (
+                                    <button
+                                        onClick={() => navigate('/validation')}
+                                        className="shrink-0 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
+                                    >
+                                        Valider {newCount} ressource(s) →
+                                    </button>
                                 )}
                             </div>
-                            <DiscoveredResourcesList
-                                resources={visibleResources}
-                                renderActions={(resource) => (
-                                    <ValidationActions
-                                        onApprove={() => handleApprove(resource.id)}
-                                        onReject={() => handleReject(resource.id)}
-                                        isProcessing={validateBatch.isPending}
-                                    />
-                                )}
-                            />
-                        </>
+
+                            {/* Liste compacte */}
+                            <DiscoveredResourcesList resources={allResources} />
+                        </div>
                     )}
 
-                    {/* État : Initial (aucune recherche lancée) */}
+                    {/* État : Initial */}
                     {!discovery.isPending && !discovery.data && !discovery.error && (
                         <div className="text-center py-16 bg-gray-50 rounded-lg">
                             <span className="text-6xl mb-4 block">🔎</span>

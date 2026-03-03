@@ -66,7 +66,7 @@ export function OverviewStep({ state, dispatch }: ValidationStepProps) {
                     🌍 Par Pays
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {Object.entries(stats.data?.by_country || {}).filter(([code, info]) => code !== 'INT').map(([code, info]) => {
+                    {Object.entries(stats.data?.by_country || {}).filter(([code, info]) => code !== 'INTER').map(([code, info]) => {
                         // Type assertion pour info
                         const countryInfo = info as { count: number; label: string }
                         return (
