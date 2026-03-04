@@ -1,3 +1,6 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { removeCountryFromLanguage, deleteLanguage } from '../../services/api'
+
 interface Country {
     country_name: string
     country_code: string
@@ -10,40 +13,60 @@ interface LanguageCardProps {
     countries: Country[]
 }
 
-const LANGUAGE_NAMES: Record<string, string> = {
-    'FR': 'Français',
-    'EN': 'English',
-    'ES': 'Español',
-    'IT': 'Italiano',
-    'DE': 'Deutsch',
-    'PT': 'Português',
-}
+
 
 export function LanguageCard({ languageCode, countries }: LanguageCardProps) {
 
+    const queryClient = useQueryClient()
+    const removeMutation = useMutation({
+        mutationFn: (country_code: string) => removeCountryFromLanguage(languageCode, country_code),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['config', 'languages'] })
+
+    })
+    const deleteMutation = useMutation({
+        mutationFn: () => deleteLanguage(languageCode),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['config', 'languages'] })
+
+    })
+
     return (
+
         <div className="bg-white rounded-lg shadow-md p-3 hover:shadow-lg transition-shadow">
-            {/* Header Langue avec cadre bleuté */}
+            {/* Header Langue */}
             <div className="mb-2 bg-purple-50 border border-purple-200 rounded-lg p-3">
-                <h3 className="text-xl font-bold text-gray-900">
-                    {LANGUAGE_NAMES[languageCode] || languageCode} : {languageCode}
-                </h3>
-                <div className="text-sm text-bold text-purple-600 mt-1">
-                    {countries.length} pays
+                <div className="flex justify-between items-center">
+                    <div>
+                        <h3 className="text-xl font-bold text-purple-900">{languageCode}</h3>
+                        <p className="text-sm text-purple-600 mt-1">{countries.length} pays</p>
+                    </div>
+                    <button
+                        onClick={() => deleteMutation.mutate()}
+                        disabled={deleteMutation.isPending}
+                        className="text-red-400 hover:text-red-600 transition-colors text-xl"
+                    >
+                        🗑️
+                    </button>
                 </div>
             </div>
 
             {/* Liste des pays */}
-            <div className="space-y-3">
+            <div className="space-y-4">
                 {countries.map(country => (
                     <div
                         key={country.country_code}
-                        className="p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                        className="flex justify-between items-center p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
                     >
-                        <p className="font-medium text-gray-900">
-                            {country.country_name}
-                            <span className="text-xs text-gray-500 ml-2">({country.country_code})</span>
-                        </p>
+                        <div>
+                            <span className="font-medium text-gray-900">{country.country_name}</span>
+                            <span className="text-xs text-gray-500 ml-1">({country.country_code})</span>
+                        </div>
+                        <button
+                            onClick={() => removeMutation.mutate(country.country_code)}
+                            disabled={removeMutation.isPending}
+                            className="text-red-400 hover:text-red-600 transition-colors"
+                        >
+                            🗑️
+                        </button>
                     </div>
                 ))}
             </div>

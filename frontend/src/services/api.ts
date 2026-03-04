@@ -120,8 +120,50 @@ export async function fetchLanguagesConfig(): Promise<ConfigResponse> {
     return response.json()
 }
 
+export async function addCountryToLanguage(
+    language: string,
+    country: CountryConfig) {
+    const response = await fetch(`${API_BASE_URL}/admin/config/countries-languages/${language}/countries`, {
+        method: `POST`,
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': AUTH_TOKEN
+        },
+        body: JSON.stringify(country)
+    })
+    if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ [API] Erreur response:', errorText)
+        throw new Error(`Erreur API: ${response.status}`)
+    }
+}
 
+export async function removeCountryFromLanguage(
+    language: string,
+    country_code: string) {
+    const response = await fetch(`${API_BASE_URL}/admin/config/countries-languages/${language}/countries/${country_code}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': AUTH_TOKEN }
+    })
+    if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ [API] Erreur response:', errorText)
+        throw new Error(`Erreur API: ${response.status}`)
+    }
+}
 
+export async function deleteLanguage(
+    language: string) {
+    const response = await fetch(`${API_BASE_URL}/admin/config/countries-languages/${language}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': AUTH_TOKEN }
+    })
+    if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ [API] Erreur response:', errorText)
+        throw new Error(`Erreur API: ${response.status}`)
+    }
+}
 // ============================================
 // Fonctions API - Discovery
 // ============================================
@@ -229,6 +271,7 @@ export async function rejectResource(id: string): Promise<void> {
         throw new Error(`Erreur rejet: ${response.status}`)
     }
 }
+
 export async function validateBatch(
     request: ValidationRequest
 ): Promise<ValidationResponse> {
