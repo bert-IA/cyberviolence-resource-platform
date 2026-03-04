@@ -1,16 +1,13 @@
-import { useCountriesConfig } from '../hooks/useCountriesConfig'
+import { useCountriesLanguagesConfig } from '../hooks/useCountriesLanguagesConfig'
 import { LanguageCard } from '../components/features/LanguageCard'
 import { LoadingSpinner } from '../components/ui/LoadingSpinner'
 import { ErrorMessage } from '../components/ui/ErrorMessage'
 
 export function ConfigurationPage() {
-    const { data, isLoading, error, refetch } = useCountriesConfig()
+    const { data: config, isLoading, error, refetch } = useCountriesLanguagesConfig()
 
     // 🔍 DEBUG : Affiche les données dans la console
-    console.log('📊 Countries config:', data)
-    if (data && data.countries_by_language.FR) {
-        console.log('🇫🇷 Premier pays FR:', data.countries_by_language.FR[0])
-    }
+
 
     return (
         <div className="max-w-7xl mx-auto p-6">
@@ -24,25 +21,25 @@ export function ConfigurationPage() {
                 </p>
 
                 {/* Stats globales */}
-                {data && (
+                {config && (
                     <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="bg-blue-50 rounded-lg p-4">
                             <div className="text-sm text-blue-700 mb-1">Langues Supportées</div>
                             <div className="text-3xl font-bold text-blue-900">
-                                {data.supported_languages.length}
+                                {Object.keys(config.languages).length}
                             </div>
                             <span className="text-xs text-blue-600 mt-1">
-                                {data.supported_languages.join(', ')}
+                                {Object.keys(config?.languages ?? {}).join(', ')}
                             </span>
                         </div>
 
                         <div className="bg-green-50 rounded-lg p-4">
                             <div className="text-sm text-green-700 mb-1">Pays Configurés</div>
                             <div className="text-3xl font-bold text-green-900">
-                                {data.total_countries}
+                                {Object.values(config.languages).flatMap(lang => lang.countries).length}
                             </div>
                             <div className="text-xs text-green-600 mt-1">
-                                Répartis sur {data.supported_languages.length} langues
+                                Répartis sur {Object.keys(config?.languages ?? {}).length} langues
                             </div>
                         </div>
                     </div>
@@ -59,13 +56,12 @@ export function ConfigurationPage() {
                 />
             )}
 
-            {data && (
+            {config && (
                 <>
                     {/* Grille des cartes langues */}
                     <div className="grid grid-cols-1 lg:grid-cols-6 gap-3">
-                        {data.supported_languages.map(langCode => {
-                            console.log('🔍 Langue du backend:', langCode)  // ← DEBUG
-                            const countries = data.countries_by_language[langCode] || []
+                        {Object.keys(config.languages).map(langCode => {
+                            const countries = config.languages[langCode].countries
                             return (
                                 <LanguageCard
                                     key={langCode}

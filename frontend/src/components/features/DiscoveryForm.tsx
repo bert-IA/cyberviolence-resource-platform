@@ -1,19 +1,16 @@
 import React, { useState } from 'react'
 import type { DiscoveryFilters } from '../../services/api'
 import { Button } from '../ui/Button'
+import { useCountriesLanguagesConfig } from '../../hooks/useCountriesLanguagesConfig'
+
 
 interface DiscoveryFormProps {
     onSubmit: (filters: DiscoveryFilters) => void
     loading: boolean
 }
 
-const LANGUAGES = [
-    { code: 'FR', name: 'Français', countries: ['France', 'Belgique', 'Suisse', 'Canada', 'Sénégal'] },
-    { code: 'EN', name: 'English', countries: ['UK', 'USA', 'Australia', 'Canada', 'New Zealand'] },
-    { code: 'ES', name: 'Español', countries: ['España', 'México', 'Argentina', 'Colombia', 'Perú'] },
-    { code: 'DE', name: 'Deutsch', countries: ['Deutschland', 'Österreich', 'Schweiz', 'Liechtenstein', 'Belgique'] },
-    { code: 'PT', name: 'Português', countries: ['Portugal', 'Brasil', 'Angola', 'Moçambique', 'Cabo Verde'] },
-]
+
+
 
 const CATEGORIES = [
     { value: 'service_support', label: 'Service d\'aides' },
@@ -28,7 +25,8 @@ export function DiscoveryForm({ onSubmit, loading }: DiscoveryFormProps) {
     const [selectedCountries, setSelectedCountries] = useState<string[]>([])
     const [maxPerCategory, setMaxPerCategory] = useState(3)
 
-    const currentLanguage = LANGUAGES.find(l => l.code === language)
+    const { data: config, isLoading, error } = useCountriesLanguagesConfig()
+    const currentLanguage = config?.languages[language]?.countries ?? []
 
     const handleCategoryToggle = (category: string) => {
         setSelectedCategories(prev =>
@@ -71,9 +69,9 @@ export function DiscoveryForm({ onSubmit, loading }: DiscoveryFormProps) {
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
                 >
-                    {LANGUAGES.map(lang => (
-                        <option key={lang.code} value={lang.code}>
-                            {lang.name}
+                    {Object.keys(config?.languages ?? {}).map(lang => (
+                        <option key={lang} value={lang}>
+                            {lang}
                         </option>
                     ))}
                 </select>
@@ -105,15 +103,15 @@ export function DiscoveryForm({ onSubmit, loading }: DiscoveryFormProps) {
                     🗺️ Pays ({selectedCountries.length} sélectionnés)
                 </label>
                 <div className="space-y-2">
-                    {currentLanguage?.countries.map(country => (
-                        <label key={country} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                    {currentLanguage.map(country => (
+                        <label key={country.country_code} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
                             <input
                                 type="checkbox"
-                                checked={selectedCountries.includes(country)}
-                                onChange={() => handleCountryToggle(country)}
+                                checked={selectedCountries.includes(country.country_name)}
+                                onChange={() => handleCountryToggle(country.country_name)}
                                 className="w-4 h-4 text-blue-600"
                             />
-                            <span className="text-sm">{country}</span>
+                            <span className="text-sm">{country.flag} {country.country_name}</span>
                         </label>
                     ))}
                 </div>

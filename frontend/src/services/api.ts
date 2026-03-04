@@ -90,6 +90,35 @@ export interface ResourceStats {
     }
 }
 
+export interface CountryConfig {
+    country_name: string
+    country_code: string
+    flag: string
+}
+
+export interface LanguageConfig {
+    countries: CountryConfig[]
+
+}
+
+export interface ConfigResponse {
+    success: boolean
+    languages: { [langageCode: string]: LanguageConfig }
+}
+
+// ============================================
+// Fonctions API - ConfigLanguage
+// ============================================
+export async function fetchLanguagesConfig(): Promise<ConfigResponse> {
+    const response = await fetch(`${API_BASE_URL}/admin/config/countries-languages`, {
+        headers: { 'Authorization': AUTH_TOKEN }
+    })
+    if (!response.ok) {
+        throw new Error(`Erreur API: ${response.status}`)
+    }
+
+    return response.json()
+}
 
 
 
