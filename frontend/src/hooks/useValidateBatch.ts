@@ -28,14 +28,11 @@ export function useValidateBatch() {
             queryClient.invalidateQueries({ queryKey: ['resources'] })
 
             // 🍞 Toast de succès selon l'action
+            const count = response.data.processed_resources.length
             if (variables.action === 'approve') {
-                toast.success(`✅ ${response.approved} ressource(s) validée(s)`, {
-                    duration: 3000,
-                })
+                toast.success(`✅ ${count} ressource(s) validée(s)`)
             } else {
-                toast.success(`🗑️ ${response.rejected} ressource(s) rejetée(s)`, {
-                    duration: 3000,
-                })
+                toast.success(`🗑️ ${count} ressource(s) rejetée(s)`)
             }
         },
 

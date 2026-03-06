@@ -8,6 +8,7 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass
 import asyncio
 import aiohttp
+import langcodes
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,9 @@ class DynamicGeoDiscovery:
                 ("Angola", "AO"),
                 ("Mozambique", "MZ"),
                 ("Cape Verde", "CV")
+            ],
+            "JA": [
+                ("Japan", "JP")
             ]
         }
     
@@ -151,20 +155,15 @@ class DynamicGeoDiscovery:
     async def _fetch_from_rest_countries_api(self, language: str, max_countries: int) -> List[CountryInfo]:
         """
         Récupère les pays via l'API REST Countries
+        Utilise langcodes pour convertir n'importe quel code ISO en nom anglais
         """
-        # Mapping des codes de langue
-        lang_mapping = {
-            "FR": "french",
-            "EN": "english", 
-            "ES": "spanish",
-            "IT": "italian",
-            "DE": "german",
-            "PT": "portuguese"
-        }
+        try:
+            lang_name = langcodes.get(language.lower()).language_name('en').lower()
+        except Exception:
+            raise ValueError(f"Code de langue invalide: {language}")
         
-        lang_name = lang_mapping.get(language)
         if not lang_name:
-            raise ValueError(f"Langue non supportée: {language}")
+            raise ValueError(f"Impossible de résoudre le code: {language}")
         
         url = f"https://restcountries.com/v3.1/lang/{lang_name}"
         search_terms = self.language_terms.get(language, [])

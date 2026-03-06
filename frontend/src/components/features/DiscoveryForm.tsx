@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import type { DiscoveryFilters } from '../../services/api'
 import { Button } from '../ui/Button'
 import { useCountriesLanguagesConfig } from '../../hooks/useCountriesLanguagesConfig'
@@ -8,9 +8,6 @@ interface DiscoveryFormProps {
     onSubmit: (filters: DiscoveryFilters) => void
     loading: boolean
 }
-
-
-
 
 const CATEGORIES = [
     { value: 'service_support', label: 'Service d\'aides' },
@@ -25,7 +22,7 @@ export function DiscoveryForm({ onSubmit, loading }: DiscoveryFormProps) {
     const [selectedCountries, setSelectedCountries] = useState<string[]>([])
     const [maxPerCategory, setMaxPerCategory] = useState(3)
 
-    const { data: config, isLoading, error } = useCountriesLanguagesConfig()
+    const { data: config } = useCountriesLanguagesConfig()
     const currentLanguage = config?.languages[language]?.countries ?? []
 
     const handleCategoryToggle = (category: string) => {

@@ -69,9 +69,14 @@ export interface ValidationRequest {
 }
 
 export interface ValidationResponse {
-    approved: number
-    rejected: number
+    success: boolean
     message: string
+    data: {
+        total_validated: number
+        action: string
+        auto_transitions: number
+        processed_resources: { resource_id: string; action: string; success: boolean }[]
+    }
 }
 
 // 🆕 Interface pour les stats groupées
@@ -98,12 +103,21 @@ export interface CountryConfig {
 
 export interface LanguageConfig {
     countries: CountryConfig[]
+    name: string
+    code: string
+    search_terms: string[]
 
 }
 
 export interface ConfigResponse {
     success: boolean
     languages: { [langageCode: string]: LanguageConfig }
+}
+export interface AutoPopulateResponse {
+    success: boolean
+    message: string
+    countries_added: number
+    countries: CountryConfig[]
 }
 
 // ============================================
@@ -119,7 +133,25 @@ export async function fetchLanguagesConfig(): Promise<ConfigResponse> {
 
     return response.json()
 }
+export async function autoPopulateCountriesByLanguage(
+    languageCode: string) {
+    const response = await fetch(`${API_BASE_URL}/admin/config/countries-languages/${languageCode}/auto-populate`, {
+        method: `POST`,
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': AUTH_TOKEN
+        },
 
+    })
+    if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ [API] Erreur response:', errorText)
+        throw new Error(`Erreur API: ${response.status}`)
+    }
+    const data: AutoPopulateResponse = await response.json()
+    return data
+
+}
 export async function addCountryToLanguage(
     language: string,
     country: CountryConfig) {
@@ -157,6 +189,24 @@ export async function deleteLanguage(
     const response = await fetch(`${API_BASE_URL}/admin/config/countries-languages/${language}`, {
         method: 'DELETE',
         headers: { 'Authorization': AUTH_TOKEN }
+    })
+    if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ [API] Erreur response:', errorText)
+        throw new Error(`Erreur API: ${response.status}`)
+    }
+}
+
+export async function addLanguage(
+    languageCode: string,
+    language: LanguageConfig) {
+    const response = await fetch(`${API_BASE_URL}/admin/config/countries-languages/${languageCode}`, {
+        method: `PUT`,
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': AUTH_TOKEN
+        },
+        body: JSON.stringify(language)
     })
     if (!response.ok) {
         const errorText = await response.text()

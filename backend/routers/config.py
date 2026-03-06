@@ -17,6 +17,7 @@ from core.config_manager import (
     LanguageConfig,
     handle_config_error,
 )
+from core.geo_discovery import geo_discovery
 from constants import LLM_PROVIDERS, DEFAULT_LLM_PROVIDER
 
 logger = logging.getLogger(__name__)
@@ -132,6 +133,69 @@ async def delete_language(language: str):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise handle_config_error(e, f"suppression langue {language}")
+
+
+@router.post("/admin/config/countries-languages/{language}/auto-populate")
+async def auto_populate_language(language: str):
+    """
+    Découvre automatiquement les pays dont la langue principale correspond
+    via l'API REST Countries, puis met à jour la config.
+    Les pays existants sont remplacés.
+    """
+    def code_to_flag(country_code: str) -> str:
+        """Génère l'emoji drapeau depuis le code pays ISO (ex: FR → 🇫🇷)
+        Même logique que le frontend : String.fromCodePoint(127397 + charCode)
+        """
+        return ''.join(chr(127397 + ord(c)) for c in country_code.upper())
+
+    try:
+        config_manager = get_config_manager()
+        lang_config = config_manager.get_language(language)
+        if not lang_config:
+            raise HTTPException(status_code=404, detail=f"Langue {language} non trouvée")
+
+        # Découverte via API REST Countries (+ fallback statique)
+        countries_info = await geo_discovery.get_countries_by_language(language.upper(), max_countries=10)
+
+        if not countries_info:
+            raise HTTPException(status_code=422, detail=f"Aucun pays trouvé pour la langue {language}")
+
+        # Conversion CountryInfo → CountryConfig
+        new_countries = [
+            CountryConfig(
+                country_name=c.name,
+                country_code=c.code,
+                flag=c.flag if c.flag != "🌍" else code_to_flag(c.code),
+                organizations_count=0
+            )
+            for c in countries_info
+        ]
+
+        # Récupèrer les search_terms connus pour cette langue (ou garder les existants)
+        known_terms = geo_discovery.language_terms.get(language.upper(), [])
+        updated_search_terms = known_terms if known_terms else lang_config.search_terms
+
+        # Mise à jour de la config
+        updated_config = LanguageConfig(
+            name=lang_config.name,
+            code=lang_config.code,
+            search_terms=updated_search_terms,
+            countries=new_countries
+        )
+        config_manager.update_language(language, updated_config)
+
+        logger.info(f"Auto-populate {language}: {len(new_countries)} pays ajoutés")
+        return {
+            "success": True,
+            "message": f"{len(new_countries)} pays ajoutés pour {language}",
+            "countries_added": len(new_countries),
+            "countries": [c.model_dump() for c in new_countries]
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise handle_config_error(e, f"auto-populate langue {language}")
 
 
 @router.get("/admin/config/stats")

@@ -18,16 +18,7 @@ class CountryConfig(BaseModel):
     country_name: str = Field(..., description="Nom du pays")
     country_code: str = Field(..., min_length=2, max_length=3, description="Code ISO du pays (FR, GB, US, etc.)")
     flag: str = Field(..., description="Emoji drapeau du pays")
-    search_terms: List[str] = Field(..., min_items=1, max_items=5, description="Termes de recherche (max 5)")
-    search_terms_count: int = Field(..., ge=1, le=5, description="Nombre de termes de recherche")
     organizations_count: int = Field(0, ge=0, description="Nombre d'organisations ciblées")
-
-    @validator('search_terms_count', always=True)
-    def validate_search_terms_count(cls, v, values):
-        """Valide que search_terms_count correspond à la longueur de search_terms"""
-        if 'search_terms' in values and v != len(values['search_terms']):
-            return len(values['search_terms'])
-        return v
 
     class Config:
         json_schema_extra = {
@@ -35,8 +26,6 @@ class CountryConfig(BaseModel):
                 "country_name": "France",
                 "country_code": "FR",
                 "flag": "🇫🇷",
-                "search_terms": ["cyberviolence", "cyberharcèlement"],
-                "search_terms_count": 2,
                 "organizations_count": 15
             }
         }
@@ -46,13 +35,14 @@ class LanguageConfig(BaseModel):
     """Configuration d'une langue"""
     name: str = Field(..., description="Nom de la langue")
     code: str = Field(..., min_length=2, max_length=2, description="Code ISO de la langue (FR, EN, etc.)")
-    countries: List[CountryConfig] = Field(..., min_items=1, max_items=5, description="Pays supportés (max 5)")
+    search_terms: List[str] = Field(default=[], description="Termes de recherche dans cette langue")
+    countries: List[CountryConfig] = Field(..., min_items=0, max_items=10, description="Pays supportés (max 10)")
 
     @validator('countries')
     def validate_max_countries(cls, v):
-        """Valide qu'il y a maximum 5 pays par langue"""
-        if len(v) > 5:
-            raise ValueError("Maximum 5 pays autorisés par langue")
+        """Valide qu'il y a maximum 10 pays par langue"""
+        if len(v) > 10:
+            raise ValueError("Maximum 10 pays autorisés par langue")
         return v
 
     class Config:
@@ -192,9 +182,9 @@ class ConfigManager:
     def update_language(self, language_code: str, language_config: LanguageConfig):
         """Met à jour ou crée la configuration d'une langue"""
         try:
-            # Validation max 5 pays
-            if len(language_config.countries) > 5:
-                raise ValueError("Maximum 5 pays autorisés par langue")
+            # Validation max 10 pays
+            if len(language_config.countries) > 10:
+                raise ValueError("Maximum 10 pays autorisés par langue")
             
             # Mise à jour
             self._config.languages[language_code.upper()] = language_config
@@ -220,9 +210,9 @@ class ConfigManager:
                     countries=[]
                 )
             
-            # Vérifie max 5 pays
-            if len(lang.countries) >= 5:
-                raise ValueError(f"Maximum 5 pays atteints pour la langue {language_code}")
+            # Vérifie max 10 pays
+            if len(lang.countries) >= 10:
+                raise ValueError(f"Maximum 10 pays atteints pour la langue {language_code}")
             
             # Vérifie doublon country_code
             if any(c.country_code == country.country_code for c in lang.countries):
