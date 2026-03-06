@@ -63,7 +63,7 @@ class BaseLLMClient(ABC):
         pass
     
     @abstractmethod
-    def _make_request(self, prompt: str) -> LLMResponse:
+    def _make_request(self, prompt: str, system_prompt: str = "") -> LLMResponse:
         """Effectue la requête vers le provider LLM"""
         pass
     
@@ -79,13 +79,13 @@ class BaseLLMClient(ABC):
             logger.error(f"LLM {self.config.provider.value} connexion FAILED: {response.error}")
             return False
     
-    def generate(self, prompt: str) -> LLMResponse:
+    def generate(self, prompt: str, system_prompt: str = "") -> LLMResponse:
         """Génère une réponse avec retry logic et gestion rate limiting"""
         start_time = time.time()
         
         for attempt in range(self.config.max_retries):
             try:
-                response = self._make_request(prompt)
+                response = self._make_request(prompt, system_prompt)
                 response.response_time = time.time() - start_time
                 return response
                 
@@ -117,7 +117,7 @@ class GeminiClient(BaseLLMClient):
     def _get_api_key(self) -> Optional[str]:
         return os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
     
-    def _make_request(self, prompt: str) -> LLMResponse:
+    def _make_request(self, prompt: str, system_prompt: str = "") -> LLMResponse:
         try:
             import google.generativeai as genai
             
@@ -125,7 +125,10 @@ class GeminiClient(BaseLLMClient):
                 raise ValueError("Clé API Gemini manquante")
             
             genai.configure(api_key=self.api_key)
-            model = genai.GenerativeModel(self.config.model)
+            model = genai.GenerativeModel(
+                self.config.model,
+                system_instruction=system_prompt if system_prompt else None
+            )
             
             response = model.generate_content(
                 prompt,
@@ -157,7 +160,7 @@ class OpenRouterClient(BaseLLMClient):
     def _get_api_key(self) -> Optional[str]:
         return os.environ.get("OPENROUTER_API_KEY")
     
-    def _make_request(self, prompt: str) -> LLMResponse:
+    def _make_request(self, prompt: str, system_prompt: str = "") -> LLMResponse:
         try:
             import requests
             
@@ -170,9 +173,14 @@ class OpenRouterClient(BaseLLMClient):
                 "Content-Type": "application/json"
             }
             
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+            
             data = {
                 "model": self.config.model,
-                "messages": [{"role": "user", "content": prompt}],
+                "messages": messages,
                 "temperature": self.config.temperature,
                 "max_tokens": self.config.max_tokens
             }
@@ -243,7 +251,7 @@ class LLMManager:
         client_class = self.PROVIDER_CLIENTS[self.provider]
         return client_class(self.config)
     
-    def generate(self, prompt: str, override_config: Optional[Dict[str, Any]] = None) -> LLMResponse:
+    def generate(self, prompt: str, system_prompt: str = "", override_config: Optional[Dict[str, Any]] = None) -> LLMResponse:
         """Génère une réponse avec le LLM configuré"""
         self._stats["requests"] += 1
         
@@ -251,9 +259,9 @@ class LLMManager:
         if override_config:
             temp_config = LLMConfig(**{**self.config.__dict__, **override_config})
             temp_client = self.PROVIDER_CLIENTS[self.provider](temp_config)
-            response = temp_client.generate(prompt)
+            response = temp_client.generate(prompt, system_prompt)
         else:
-            response = self.client.generate(prompt)
+            response = self.client.generate(prompt, system_prompt)
         
         if response.success:
             self._stats["successes"] += 1

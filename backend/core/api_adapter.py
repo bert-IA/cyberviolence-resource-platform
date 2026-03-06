@@ -11,7 +11,7 @@ from core.llm_manager import get_llm_manager, LLMProvider
 from core.workflow_manager import get_workflow_manager
 from core.dual_validation import get_validation_system, ValidationAction, ValidationStage
 from core.geo_discovery import get_countries_for_language
-from core.category_prompts import get_category_prompt, PRIORITY_PLATFORMS
+from core.category_prompts import get_category_prompt, CategoryPrompts, PRIORITY_PLATFORMS
 
 logger = logging.getLogger(__name__)
 
@@ -298,7 +298,10 @@ class LegacyAPIAdapter:
                         print(f"   Organisations à exclure: {found_organizations}")
                         print(f"   Prompt (200 premiers chars): {prompt[:200]}...")
                         
-                        response = self.llm_manager.generate(prompt)
+                        response = self.llm_manager.generate(
+                            prompt,
+                            system_prompt=CategoryPrompts.get_system_prompt(language)
+                        )
                         
                         # ✅ DEBUG: Log la réponse du LLM
                         if response.success:
@@ -461,7 +464,10 @@ class LegacyAPIAdapter:
                     logger.info(f"Tentative {attempt}/{max_attempts} pour {category} en {country_name} (trouvés: {discovered_count}/{max_resources})")
                     
                     # Générer avec LLM
-                    response = self.llm_manager.generate(prompt)
+                    response = self.llm_manager.generate(
+                        prompt,
+                        system_prompt=CategoryPrompts.get_system_prompt(language)
+                    )
                     
                     if response.success:
                         # DEBUG: Log de la réponse brute
@@ -1314,7 +1320,10 @@ class LegacyAPIAdapter:
                         
                         # Générer un prompt spécifique pour cette plateforme
                         prompt = self._generate_single_platform_prompt(platform_name, language)
-                        response = self.llm_manager.generate(prompt)
+                        response = self.llm_manager.generate(
+                            prompt,
+                            system_prompt=CategoryPrompts.get_system_prompt(language)
+                        )
                         
                         if response.success:
                             logger.info(f"📝 LLM Response pour {platform_name}: {response.content[:150]}...")

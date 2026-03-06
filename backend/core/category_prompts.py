@@ -1,23 +1,46 @@
 """
-Prompts LLM spécialisés par catégorie de ressource
-Implémentation de la stratégie lean selon logic_sourcing_ressources.md
+Prompts LLM spécialisés par catégorie de ressource.
+
+Stratégie multi-langue : les prompts sont en anglais (langue pivot).
+La langue de réponse est contrôlée via `get_system_prompt()` transmis
+en system_prompt au LLM — compatible avec tous les providers.
 """
 
+import langcodes
 from typing import Dict, Callable
 
 
 class CategoryPrompts:
-    """Générateur de prompts spécialisés par catégorie et langue"""
-    
+    """Générateur de prompts spécialisés par catégorie — EN pivot + system_prompt langue."""
+
+    @staticmethod
+    def get_system_prompt(language_code: str) -> str:
+        """Retourne un system_prompt demandant au LLM de répondre dans la langue cible.
+
+        Les labels de champs (Name:, URL:, etc.) restent en anglais pour
+        que le parser soit robuste quelle que soit la langue de contenu.
+        """
+        try:
+            lang_name = langcodes.get(language_code.lower()).language_name("en")
+        except Exception:
+            lang_name = language_code
+
+        return (
+            f"You are a research assistant specialized in online safety resources. "
+            f"Always respond entirely in {lang_name}. "
+            f"Keep the field label names exactly as written in the prompt (do not translate them). "
+            f"Only translate the field values and free-text content."
+        )
+
     @staticmethod
     def generate_prompt(category: str, country: str, language: str, **kwargs) -> str:
         """
         Génère un prompt spécialisé selon la catégorie
-        
+
         Args:
-            category: Type de ressource (contact_urgence, procedure_plateforme, etc.)
+            category: Type de ressource (service_support, procedure_plateforme, etc.)
             country: Pays cible
-            language: Langue du prompt (FR, EN, ES, IT, DE, PT)
+            language: Code langue ISO (conservé pour compatibilité — le prompt est en anglais)
             **kwargs: Paramètres spécialisés (platform_name pour procedure_plateforme, etc.)
         """
         
@@ -43,15 +66,7 @@ class CategoryPrompts:
         exclude_orgs = kwargs.get("exclude_orgs", [])
         if exclude_orgs:
             org_list = ", ".join(exclude_orgs)
-            exclusion_map = {
-                "FR": f"\n\n⛔ ÉVITE ABSOLUMENT ces ressources déjà trouvées : {org_list}",
-                "EN": f"\n\n⛔ ABSOLUTELY AVOID these already found resources: {org_list}",
-                "ES": f"\n\n⛔ EVITA ABSOLUTAMENTE estos recursos ya encontrados: {org_list}",
-                "IT": f"\n\n⛔ EVITA ASSOLUTAMENTE queste risorse già trovate: {org_list}",
-                "DE": f"\n\n⛔ VERMEIDE UNBEDINGT diese bereits gefundenen Ressourcen: {org_list}",
-                "PT": f"\n\n⛔ EVITE ABSOLUTAMENTE estes recursos já encontrados: {org_list}",
-            }
-            prompt += exclusion_map.get(language, exclusion_map["EN"])
+            prompt += f"\n\n⛔ ABSOLUTELY AVOID these already found resources: {org_list}"
 
         return prompt
     
@@ -62,14 +77,34 @@ class CategoryPrompts:
 
     @staticmethod
     def _prompt_service_support(country: str, language: str, **kwargs) -> str:
-        """Prompt V2 : services d'assistance nationaux contre la cyberviolence.
+        """EN-only prompt. Language via system_prompt (see get_system_prompt)."""
+        return f"""Find OFFICIAL assistance services against cyberviolence in {country}.
 
-        Plus large que contact_urgence (V1) : inclut services hors urgences,
-        plateformes d'aide, numéros gratuits, formulaires en ligne.
-        Priorise les sources gouvernementales (is_governmental=true).
-        Demande scope_audience, scope_violence, scope_anonymous, direct_link.
-        """
-        
+STRICT CRITERIA:
+- Absolute priority to government or officially recognized services
+- Specialized in cyberviolence, cyberbullying, or violence (including offline)
+- Accessible to minors AND/OR general public
+- Direct contact: phone number, form, chat — not a generic institutional website
+- Include 24h services, office hours, and online platforms
+
+PRIORITY SOURCES:
+- National short numbers (3018, 116 111, 116 000…)
+- Specialized government services (e.g. e-Enfance, Net Écoute)
+- Government online help platforms
+- Youth cyberviolence hotlines
+
+Answer ONLY in this exact format:
+Name: [Exact official service]
+URL: [Official website]
+DirectLink: [Direct URL to help page or contact form]
+Description: [Service offered in 1-2 sentences]
+Phone: [Number if available, otherwise empty]
+Hours: [Precise availability]
+Audience: [minors | all]
+ViolenceType: [cyberviolence | all]
+Anonymous: [yes | no]
+Governmental: [yes | no]"""
+        # ===== LEGACY multi-language dict (unreachable — kept for reference) =====
         prompts = {
             "FR": f"""Trouve des services d'assistance OFFICIELS contre la cyberviolence en {country}.
 
@@ -242,10 +277,33 @@ Governamental: [sim | não]"""
     
     @staticmethod
     def _prompt_procedure_plateforme(country: str, language: str, **kwargs) -> str:
-        """Prompt pour découverte de procédures techniques plateformes"""
-        
-        platform_name = kwargs.get("platform_name", "toutes plateformes")
+        """EN-only prompt. Language via system_prompt (see get_system_prompt)."""
+        platform_name = kwargs.get("platform_name", "all platforms")
+        return f"""Find EXACT reporting procedures on {platform_name} updated in 2024/2025.
 
+TARGET PLATFORMS (include social networks AND youth messaging apps):
+Instagram, TikTok, Snapchat, YouTube, Facebook, X/Twitter,
+Discord, WhatsApp, Telegram, BeReal, Twitch
+
+STRICT CRITERIA:
+- Official help center URLs ONLY
+- Recent step-by-step procedures (post-2024)
+- Specific to cyberbullying/cyberviolence
+- Indicate exact action type: report, block, content removal, profile management
+
+OFFICIAL SOURCES only:
+- Official platform help centers
+- Official security documentation
+- Updated reporting guides
+
+Answer ONLY in this exact format:
+Platform: [Exact platform name]
+URL: [Official help center link]
+DirectLink: [Direct URL to cyberbullying-specific page]
+Description: [1-2 sentences: what this page allows you to do (report, block, safety settings, etc.)]
+ActionType: [report | block | content_removal | profile_management]
+Anonymous: [yes | no]"""
+        # ===== LEGACY multi-language dict (unreachable — kept for reference) =====
         prompts = {
             "FR": f"""Trouve les procédures EXACTES de signalement sur {platform_name} mises à jour en 2024/2025.
 
@@ -406,8 +464,40 @@ Anônimo: [sim | não]"""
     
     @staticmethod
     def _prompt_signalement_autorite(country: str, language: str, **kwargs) -> str:
-        """Prompt pour découverte de signalement aux autorités officielles"""
-        
+        """EN-only prompt. Language via system_prompt (see get_system_prompt)."""
+        return f"""Find OFFICIAL government reporting platforms for cyberbullying in {country}.
+
+KNOWN EXAMPLES (verify and complete):
+- France: PHAROS (internet-signalement.gouv.fr), cybermalveillance.gouv.fr
+- UK: report.cybercrime.gov.uk, CEOP
+- Germany: BKA online reporting
+
+STRICT CRITERIA:
+- .gov or official equivalent sites ONLY
+- Functional and recent online forms
+- Specific cyberbullying procedures (not general crime)
+- No private associations or NGOs
+- Government authority or police/justice
+
+PRIORITY GOVERNMENT SOURCES:
+- National police/law enforcement platforms
+- Justice/Interior Ministries
+- Digital regulation authorities
+- Official cybercrime services
+
+Answer ONLY in this exact format:
+Name: [Official government platform]
+URL: [.gov or official equivalent site — WITH https://]
+DirectLink: [Direct URL to cyberbullying form — WITH https://]
+Description: [1-2 sentences: what this platform allows you to do]
+Authority: [Police/Justice/Regulator responsible]
+Jurisdiction: [Territorial competence]
+ReportingMethod: [form | phone | whatsapp | email | app | mail]
+Anonymous: [yes | no]
+Audience: [minors | all]
+ViolenceType: [cyberviolence | all]
+Governmental: [yes | no]"""
+        # ===== LEGACY multi-language dict (unreachable — kept for reference) =====
         prompts = {
             "FR": f"""Trouve les plateformes OFFICIELLES de signalement aux autorités pour cyberharcèlement en {country}.
 
