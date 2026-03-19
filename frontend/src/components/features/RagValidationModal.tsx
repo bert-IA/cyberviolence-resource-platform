@@ -102,6 +102,47 @@ export function RagValidationModal({
                     </div>
                 </div>
 
+                {/* Périmètre — lecture seule */}
+                <div className="bg-gray-50 rounded-lg p-4 space-y-3 mb-6">
+                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Périmètre</h3>
+                    <div className="grid grid-cols-2 gap-3">
+                        {resource.scope_audience && (
+                            <div>
+                                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Public visé</span>
+                                <p className="text-sm text-gray-900 mt-0.5">{resource.scope_audience}</p>
+                            </div>
+                        )}
+                        {resource.scope_violence && (
+                            <div>
+                                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Type de violence</span>
+                                <p className="text-sm text-gray-900 mt-0.5">{resource.scope_violence}</p>
+                            </div>
+                        )}
+                        {resource.action_type && (
+                            <div>
+                                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Type d'action</span>
+                                <p className="text-sm text-gray-900 mt-0.5">{resource.action_type}</p>
+                            </div>
+                        )}
+                        {resource.scope_signalement && (
+                            <div>
+                                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Périmètre signalement</span>
+                                <p className="text-sm text-gray-900 mt-0.5">{resource.scope_signalement}</p>
+                            </div>
+                        )}
+                        <div>
+                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Anonyme</span>
+                            <p className="text-sm text-gray-900 mt-0.5">{resource.scope_anonymous ? 'Oui' : 'Non'}</p>
+                        </div>
+                        {resource.is_governmental !== undefined && resource.is_governmental !== null && (
+                            <div>
+                                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Gouvernemental</span>
+                                <p className="text-sm text-gray-900 mt-0.5">{resource.is_governmental ? 'Oui' : 'Non'}</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
                 <div className="flex justify-end gap-3 pt-4 border-t">
                     <Button
                         label="Rejeter"

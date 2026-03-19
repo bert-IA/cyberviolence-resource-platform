@@ -45,13 +45,9 @@ class CategoryPrompts:
         """
         
         prompt_generators = {
-            # ── V2 ──────────────────────────────────────────────────────
             "service_support":      CategoryPrompts._prompt_service_support,
             "procedure_plateforme": CategoryPrompts._prompt_procedure_plateforme,
             "signalement_autorite": CategoryPrompts._prompt_signalement_autorite,
-            # ── Alias V1 (rétrocompatibilité) ────────────────────────
-            "contact_urgence":      CategoryPrompts._prompt_service_support,
-            "services_support":     CategoryPrompts._prompt_service_support,
         }
 
         if category not in prompt_generators:
@@ -69,10 +65,75 @@ class CategoryPrompts:
             prompt += f"\n\n⛔ ABSOLUTELY AVOID these already found resources: {org_list}"
 
         return prompt
-    
+
+    # =================================================================
+    # ENRICHISSEMENT — prompts pour ressource connue (ajout manuel)
+    # Différence clé : le nom est fourni, le LLM cherche les détails.
+    # Le format de sortie est identique aux prompts de découverte pour
+    # que _parse_llm_response puisse parser sans modification.
+    # =================================================================
+
+    @staticmethod
+    def generate_enrich_prompt(category: str, name: str, country: str, language: str) -> str:
+        """Génère un prompt d'enrichissement pour une ressource connue par son nom."""
+        enrich_generators = {
+            "service_support":      CategoryPrompts._enrich_service_support,
+            "procedure_plateforme": CategoryPrompts._enrich_procedure_plateforme,
+            "signalement_autorite": CategoryPrompts._enrich_signalement_autorite,
+        }
+        fn = enrich_generators.get(category)
+        if not fn:
+            raise ValueError(f"Catégorie non supportée: '{category}'")
+        return fn(name, country, language)
+
+    @staticmethod
+    def _enrich_service_support(name: str, country: str, language: str) -> str:
+        return f"""The following assistance service is known to exist in {country}: "{name}".
+Find its exact official details. Leave a field empty if you are not certain.
+
+Answer ONLY in this exact format:
+Name: {name}
+URL: [official website with https://]
+DirectLink: [direct URL to help page or contact form]
+Description: [what this service offers in 1-2 sentences]
+Phone: [exact phone number or empty]
+Audience: [minors | all]
+ViolenceType: [cyberviolence | all]
+Anonymous: [yes | no]
+Governmental: [yes | no]"""
+
+    @staticmethod
+    def _enrich_procedure_plateforme(name: str, country: str, language: str) -> str:
+        return f"""The following platform is known to exist: "{name}".
+Find its exact official cyberbullying reporting procedure.
+
+Answer ONLY in this exact format:
+Platform: {name}
+URL: [official help center with https://]
+DirectLink: [direct URL to the cyberbullying-specific page]
+Description: [what this procedure allows in 1-2 sentences]
+ActionType: [report | block | content_removal | profile_management]
+Anonymous: [yes | no]"""
+
+    @staticmethod
+    def _enrich_signalement_autorite(name: str, country: str, language: str) -> str:
+        return f"""The following official reporting authority is known to exist in {country}: "{name}".
+Find its exact official details for cyberbullying reporting.
+
+Answer ONLY in this exact format:
+Name: {name}
+URL: [official .gov or equivalent site with https://]
+DirectLink: [direct URL to cyberbullying form with https://]
+Description: [what this platform allows in 1-2 sentences]
+Authority: [Police/Justice/Regulator responsible]
+ReportingMethod: [form | phone | whatsapp | email | app | mail]
+Anonymous: [yes | no]
+Audience: [minors | all]
+Governmental: [yes | no]"""
+
     # =================================================================
     # �️ SERVICE SUPPORT - Services d'assistance nationaux (V2)
-    #    Remplace : contact_urgence + services_support (V1)
+
     # =================================================================
 
     @staticmethod
@@ -785,19 +846,6 @@ Acreditación: [Tipo de acreditación o reconocimiento oficial]"""
         return prompts.get(language, prompts["EN"])
     
     # ================================================================
-    # 🤝 SERVICES SUPPORT — supprimé en V2
-    #    Fusionné dans service_support. Alias conservé pour
-    #    compatibilité avec les appels existants.
-    # ================================================================
-
-    @staticmethod
-    def _prompt_services_support(country: str, language: str, **kwargs) -> str:
-        """Deprecated V2 — redirige vers _prompt_service_support."""
-        return CategoryPrompts._prompt_service_support(country, language, **kwargs)
-        
-        # Délégation vers _prompt_service_support (fusion V2)
-        return CategoryPrompts._prompt_service_support(country, language, **kwargs)
-
 
 # Fonction utilitaire pour l'intégration facile
 def get_category_prompt(category: str, country: str, language: str, **kwargs) -> str:
@@ -805,7 +853,7 @@ def get_category_prompt(category: str, country: str, language: str, **kwargs) ->
     Interface simple pour obtenir un prompt spécialisé
     
     Usage:
-        prompt = get_category_prompt("contact_urgence", "France", "FR")
+        prompt = get_category_prompt("service_support", "France", "FR")
         prompt = get_category_prompt("procedure_plateforme", "Germany", "DE", platform_name="Instagram")
     """
     return CategoryPrompts.generate_prompt(category, country, language, **kwargs)

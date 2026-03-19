@@ -18,8 +18,12 @@ import logging
 from datetime import datetime
 
 from core.api_adapter import get_api_adapter
+from core.category_prompts import CategoryPrompts
+from constants import DISCOVERY_CATEGORIES
 from services.resource_mapper import map_resource_to_api, map_resources_list
 from routers.auth import verify_admin_token
+
+_VALID_CATEGORIES = list(DISCOVERY_CATEGORIES.keys())
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +202,167 @@ async def manage_rag_source(request: Request, admin_id: str = Depends(verify_adm
         raise
     except Exception as e:
         logger.error(f"Erreur manage_rag_source: {e}")
+        return JSONResponse(status_code=500, content={"success": False, "message": str(e)})
+
+
+# ─── AJOUT MANUEL ────────────────────────────────────────────────────────────
+
+@router.post("/resources/enrich")
+async def enrich_resource(request: Request, admin_id: str = Depends(verify_admin_token)):
+    """
+    Étape 1 de l'ajout manuel : enrichit une ressource connue via LLM.
+
+    Reçoit : name, country_code, country_name, category, language
+    Retourne : champs enrichis sous forme de preview (RIEN n'est sauvegardé)
+
+    Principe : le prompt dit au LLM "ce nom existe dans ce pays, trouve les détails".
+    La réponse est parsée par _parse_llm_response (même parser que la découverte auto).
+    """
+    try:
+        data = await request.json()
+        name         = data.get("name", "").strip()
+        country_code = data.get("country_code", "").strip()
+        country_name = data.get("country_name", country_code).strip()
+        category     = data.get("category", "").strip()
+        language     = data.get("language", "FR").strip()
+
+        if not name:
+            raise HTTPException(status_code=400, detail="name requis")
+        if not country_code:
+            raise HTTPException(status_code=400, detail="country_code requis")
+        if category not in _VALID_CATEGORIES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Catégorie invalide. Valides : {', '.join(_VALID_CATEGORIES)}"
+            )
+
+        prompt = CategoryPrompts.generate_enrich_prompt(category, name, country_name, language)
+        system_prompt = CategoryPrompts.get_system_prompt(language)
+
+        adapter = get_api_adapter()
+        response = adapter.llm_manager.generate(prompt, system_prompt=system_prompt)
+
+        if not response.success:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Erreur LLM : {getattr(response, 'error', 'réponse vide')}"
+            )
+
+        country_ctx = {"name": country_name, "code": country_code}
+        parsed = adapter._parse_llm_response(response.content, country_ctx, language)
+
+        if not parsed:
+            raise HTTPException(
+                status_code=422,
+                detail="Le LLM n'a pas retourné de données exploitables"
+            )
+
+        # Le nom fourni par l'admin prime sur ce que le LLM a écrit
+        parsed["name"] = name
+        parsed.setdefault("country_code", country_code)
+        parsed.setdefault("country_name", country_name)
+        parsed.setdefault("language", language)
+        parsed["category"] = category
+
+        return JSONResponse(content={
+            "success": True,
+            "data": parsed,
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur enrich_resource: {e}")
+        return JSONResponse(status_code=500, content={"success": False, "message": str(e)})
+
+
+@router.post("/resources")
+async def create_resource(request: Request, admin_id: str = Depends(verify_admin_token)):
+    """
+    Étape 2 de l'ajout manuel : crée la ressource directement à critical_pending.
+
+    Reçoit : tous les champs (issus du preview enrichi, potentiellement modifiés par l'admin)
+    Retourne : la ressource créée avec son ID
+
+    Pourquoi 3 transitions ?
+    Le workflow_manager n'autorise que des transitions validées une par une :
+        discovered → geo_pending → geo_validated → critical_pending
+    On ne peut pas sauter d'étapes — on les enchaîne avec un motif "ajout manuel".
+    """
+    try:
+        data = await request.json()
+
+        # Accepte "name" (format interne) ou "organization_name" (format API)
+        name         = (data.get("name") or data.get("organization_name", "")).strip()
+        country_code = data.get("country_code", "").strip()
+        country_name = data.get("country_name", country_code).strip()
+        category     = data.get("category", "").strip()
+        language     = data.get("language", "FR").strip()
+
+        if not name:
+            raise HTTPException(status_code=400, detail="name requis")
+        if not country_code:
+            raise HTTPException(status_code=400, detail="country_code requis")
+        if category not in _VALID_CATEGORIES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Catégorie invalide. Valides : {', '.join(_VALID_CATEGORIES)}"
+            )
+
+        adapter = get_api_adapter()
+        wm = adapter.workflow_manager
+
+        # Vérification doublons : même nom + même pays
+        for rid, res in wm.unified_data.items():
+            if (res.get("name", "").lower() == name.lower() and
+                    res.get("country_code") == country_code):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Ressource '{name}' déjà existante pour {country_code} (id: {rid})"
+                )
+
+        resource_id = f"MANUAL_{country_code}_{category.upper()}_{int(datetime.now().timestamp())}"
+
+        resource_data = {
+            "name":            name,
+            "description":     data.get("description", ""),
+            "website":         data.get("website", ""),
+            "direct_link":     data.get("direct_link", ""),
+            "phone":           data.get("phone", ""),
+            "email":           data.get("email", ""),
+            "country_code":    country_code,
+            "country_name":    country_name,
+            "language":        language,
+            "is_governmental": data.get("is_governmental", False),
+            "scope_audience":  data.get("scope_audience", ""),
+            "scope_violence":  data.get("scope_violence", ""),
+            "scope_anonymous": data.get("scope_anonymous", False),
+            "action_type":     data.get("action_type", ""),
+            "is_new":          True,
+        }
+
+        # Créer à "discovered" puis enchaîner vers critical_pending
+        wm.add_discovered_resource_with_category(resource_id, resource_data, category=category)
+
+        notes = "Ajout manuel via interface admin"
+        for target in ["geo_pending", "geo_validated", "critical_pending"]:
+            ok = wm.transition_status(resource_id, target, admin_id, notes)
+            if not ok:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Transition vers '{target}' refusée par le workflow"
+                )
+
+        mapped = map_resource_to_api(resource_id, wm.unified_data[resource_id])
+        return JSONResponse(
+            status_code=201,
+            content={"success": True, "resource_id": resource_id, "resource": mapped}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur create_resource: {e}")
         return JSONResponse(status_code=500, content={"success": False, "message": str(e)})
 
 

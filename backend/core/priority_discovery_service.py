@@ -44,7 +44,7 @@ DEFAULT_PRIORITY_CONFIG = {
     # NIVEAU 1 - CRITIQUE (Impact direct, découverte hebdomadaire)
     # =================================================================
     'services_urgence_cyber': PriorityConfig(
-        category='contact_urgence',
+        category='service_support',
         priority=DiscoveryPriority.CRITICAL,
         description='Services urgence cyberharcèlement jeunes',
         chatbot_usage='Sentiment négatif → Service support → Contact urgence',
@@ -139,7 +139,7 @@ class PriorityDiscoveryService:
     service = PriorityDiscoveryService()
     
     # Obtenir config pour une catégorie
-    config = service.get_config('contact_urgence')
+    config = service.get_config('service_support')
     print(f"Max ressources: {config.default_max_resources}")
     print(f"Retry attempts: {config.retry_attempts}")
     
@@ -149,12 +149,12 @@ class PriorityDiscoveryService:
         print(f"{config.category} - {config.user_impact}")
     
     # Vérifier quand re-découvrir
-    due = service.is_discovery_due(country, 'contact_urgence')
+    due = service.is_discovery_due(country, 'service_support')
     if due:
-        start_discovery(country, 'contact_urgence')
+        start_discovery(country, 'service_support')
     
     # Marquer découverte comme complète
-    service.mark_discovered(country, 'contact_urgence', resources_found=5)
+    service.mark_discovered(country, 'service_support', resources_found=5)
     
     # Rapport pour admin
     report = service.get_discovery_status_report(country)

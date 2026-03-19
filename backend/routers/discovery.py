@@ -17,10 +17,9 @@ logger = logging.getLogger(__name__)
 # ─── Catégories valides V2 ───────────────────────────────────────────────────
 # Changement V2 : association_locale → service_support
 VALID_CATEGORIES_V2 = [
-    "service_support",        # 🆕 V2 : support national (ex contact_urgence élargi)
-    "procedure_plateforme",   # ✅ Inchangé
-    "signalement_autorite",   # ✅ Inchangé
-    "contact_urgence",        # ⚠️  Maintenu pour backward compat (alias service_support)
+    "service_support",        # Services d'assistance nationaux
+    "procedure_plateforme",   # Procédures des plateformes numériques
+    "signalement_autorite",   # Autorités légales de signalement
 ]
 
 router = APIRouter(tags=["Discovery"])
@@ -35,7 +34,6 @@ async def discover_by_category(category: str, request: Request, admin_id: str = 
     - service_support       : Services nationaux d'aide (gouvernementaux en priorité)
     - procedure_plateforme  : Procédures officielles plateformes (inclut Discord, WhatsApp...)
     - signalement_autorite  : Autorités légales de signalement
-    - contact_urgence       : Alias de service_support (backward compat)
     """
     try:
         data = await request.json()
@@ -51,8 +49,7 @@ async def discover_by_category(category: str, request: Request, admin_id: str = 
         if not country_code:
             raise HTTPException(status_code=400, detail="country_code requis")
 
-        # Normalisation V2 : contact_urgence → service_support
-        effective_category = "service_support" if category == "contact_urgence" else category
+        effective_category = category
 
         specialized_params = {}
         if effective_category == "procedure_plateforme":
@@ -186,7 +183,6 @@ async def get_category_stats(country_code: str):
         # V2 : targets mis à jour (association_locale → service_support)
         lean_targets = {
             "service_support":      3,
-            "contact_urgence":      3,  # backward compat
             "procedure_plateforme": 5,
             "signalement_autorite": 4,
         }

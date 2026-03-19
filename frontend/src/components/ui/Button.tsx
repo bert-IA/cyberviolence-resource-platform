@@ -4,6 +4,7 @@ interface ButtonProps {
     variant?: 'primary' | 'secondary' | 'danger' | 'tab' | 'tab-active'
     disabled?: boolean
     type?: 'button' | 'submit' | 'reset'
+    className?: string
 }
 
 export function Button({
@@ -11,8 +12,8 @@ export function Button({
     onClick,
     variant = 'primary',
     disabled = false,
-    type = 'button'
-
+    type = 'button',
+    className = ''
 }: ButtonProps) {
 
     const baseStyles = "px-4 py-2 rounded-lg font-medium transition-colors"
@@ -34,7 +35,7 @@ export function Button({
             type={type}
             onClick={onClick}
             disabled={disabled}
-            className={`${baseStyles} ${variantStyles} ${disabledStyles}`}
+            className={`${baseStyles} ${variantStyles} ${disabledStyles} ${className}`}
         >
             {label}
         </button>

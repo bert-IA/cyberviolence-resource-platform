@@ -117,7 +117,7 @@ class CriteriaValidationManager:
             raise ValueError(f"Ressource {resource_id} non trouvée")
         
         # Récupérer la catégorie
-        category = resource.get("metadata", {}).get("category", "services_support")
+        category = resource.get("metadata", {}).get("category", "service_support")
         
         # Récupérer les critères selon catégorie et étape
         if ValidationCriteria:

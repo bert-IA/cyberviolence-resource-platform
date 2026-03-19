@@ -8,19 +8,10 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass, asdict
 
 class ResourceCategory(Enum):
-    """3 catégories cibles V2 selon la stratégie lean
-
-    V2 — SERVICE_SUPPORT remplace contact_urgence + association_locale.
-    CONTACT_URGENCE conservé comme alias de rétrocompatibilité.
-    """
-    # ── Catégories V2 actives ─────────────────────────────────────────────────
+    """3 catégories V2 selon la stratégie lean"""
     SERVICE_SUPPORT      = "service_support"       # 🛡️ Services d'assistance nationaux
     PROCEDURE_PLATEFORME = "procedure_plateforme"  # 🛠️ Procédures des plateformes numériques
     SIGNALEMENT_AUTORITE = "signalement_autorite"  # ⚖️ Autorités légales officielles
-
-    # ── Alias V1 conservés pour rétrocompatibilité (ne pas utiliser en V2) ───
-    CONTACT_URGENCE = "contact_urgence"            # → fusionné dans SERVICE_SUPPORT
-    SERVICES_SUPPORT = "services_support"          # → fusionné dans SERVICE_SUPPORT
 
 class UrgencyLevel(Enum):
     """Niveau d'urgence pour prioriser les ressources"""
@@ -130,13 +121,9 @@ class CategoryTargets:
 
 # Mapping des catégories vers actions utilisateur (pour intégration chatbot future)
 CATEGORY_TO_ACTION_MAPPING = {
-    # V2
     ResourceCategory.SERVICE_SUPPORT:      "besoin_aide",
     ResourceCategory.PROCEDURE_PLATEFORME: "signaler_contenu",
     ResourceCategory.SIGNALEMENT_AUTORITE: "porter_plainte",
-    # V1 — alias rétrocompatibilité
-    ResourceCategory.CONTACT_URGENCE:      "besoin_aide",
-    ResourceCategory.SERVICES_SUPPORT:     "besoin_aide",
 }
 
 # Critères de validation par catégorie V2
@@ -159,12 +146,5 @@ VALIDATION_CRITERIA_BY_CATEGORY = {
         "formulaire_actif":      "Formulaire ou contact testé et fonctionnel",
         "competence_juridiction": "Autorité compétente pour la cyberviolence confirmée",
         "anonymat":              "Possibilité de signalement anonyme documentée",
-    },
-    # Alias V1 — redirige vers les critères SERVICE_SUPPORT
-    ResourceCategory.CONTACT_URGENCE: {
-        "statut_officiel":   "Source gouvernementale ou officiellement reconnue",
-        "public_cible":      "Public visé identifié (mineurs / tous)",
-        "direct_link":       "Lien direct vers la page d'aide ou formulaire vérifié",
-        "accessibilite":     "Horaires, langue et modalités de contact vérifiés",
     },
 }

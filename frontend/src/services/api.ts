@@ -119,6 +119,13 @@ export interface AutoPopulateResponse {
     countries_added: number
     countries: CountryConfig[]
 }
+interface EnrichResourceParams {
+    name: string
+    country_code: string
+    country_name: string
+    category: string
+    language: string
+}
 
 // ============================================
 // Fonctions API - ConfigLanguage
@@ -359,6 +366,47 @@ export async function getResourceStats(
     }
 
     return response.json()
+}
+
+// ============================================
+// Fonctions API - Ajout manuel
+// ============================================
+
+export async function enrichResource(params: EnrichResourceParams): Promise<Partial<Resource>> {
+    const response = await fetch(`${API_BASE_URL}/resources/enrich`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': AUTH_TOKEN
+        },
+        body: JSON.stringify(params)
+    })
+    if (!response.ok) {
+        const errorText = await response.text()
+        console.error('❌ [API] Erreur response:', errorText)
+        throw new Error(`Erreur API: ${response.status}`)
+    }
+    const data = await response.json()
+    return data.data
+}
+
+export async function createResource(resource: Partial<Resource>): Promise<Resource> {
+    const response = await fetch(`${API_BASE_URL}/resources`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': AUTH_TOKEN
+        },
+        body: JSON.stringify(resource)
+    })
+    if (!response.ok) {
+        const errorBody = await response.json().catch(() => null)
+        const detail = errorBody?.detail ?? `Erreur API: ${response.status}`
+        console.error('❌ [API] Erreur create_resource:', detail)
+        throw new Error(detail)
+    }
+    const data = await response.json()
+    return data.resource
 }
 
 // ============================================

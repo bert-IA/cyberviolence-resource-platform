@@ -62,8 +62,6 @@ LEAN_MAX_COUNTRIES_PER_LANGUAGE = 5
 LEAN_MAX_RESOURCES_PER_COUNTRY = 16
 
 # === CATÉGORIES DE DÉCOUVERTE V2 ===
-# V2 : association_locale supprimée, service_support ajouté.
-# contact_urgence conservé comme alias backward compat.
 DISCOVERY_CATEGORIES = {
     "service_support": {
         "label": "Services d'assistance",
@@ -82,14 +80,6 @@ DISCOVERY_CATEGORIES = {
         "description": "Autorités légales de signalement (police, PHAROS, cybermalveillance.gouv.fr)",
         "default_count": 4,
         "v2": True,
-    },
-    # Alias V1 — backward compat uniquement, redirige vers service_support
-    "contact_urgence": {
-        "label": "Contact urgence (alias V1)",
-        "description": "Alias de service_support — utiliser service_support en V2",
-        "default_count": 3,
-        "v2": False,
-        "alias_of": "service_support",
     },
 }
 

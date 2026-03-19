@@ -67,7 +67,7 @@ class ValidationCriteria:
         Récupère les critères spécialisés selon la catégorie et l'étape
         
         Args:
-            category: Catégorie de ressource (contact_urgence, procedure_plateforme, etc.)
+            category: Catégorie de ressource (service_support, procedure_plateforme, signalement_autorite)
             validation_stage: "geographic" ou "critical"
         
         Returns:
@@ -83,8 +83,6 @@ class ValidationCriteria:
             "service_support": ResourceCategory.SERVICE_SUPPORT,
             "procedure_plateforme": ResourceCategory.PROCEDURE_PLATEFORME,
             "signalement_autorite": ResourceCategory.SIGNALEMENT_AUTORITE,
-            "contact_urgence": ResourceCategory.CONTACT_URGENCE,     # alias V1
-            "services_support": ResourceCategory.SERVICES_SUPPORT    # alias V1
         }
         
         category_enum = category_enum_mapping.get(category)
@@ -102,7 +100,7 @@ class ValidationCriteria:
             }
             
             # Ajouter critères spécialisés selon catégorie
-            if category in ("contact_urgence", "service_support", "services_support"):
+            if category == "service_support":
                 geo_specialized["specialisation"] = specialized_criteria.get("specialisation", "Spécialisation cyberviolence vérifiée")
             elif category == "signalement_autorite":
                 geo_specialized["site_officiel"] = specialized_criteria.get("site_officiel", "Domaine gouvernemental vérifié")
@@ -164,10 +162,10 @@ class DualValidationSystem:
         try:
             resource_data = self.workflow_manager.unified_data.get(resource_id, {})
             metadata = resource_data.get("metadata", {})
-            return metadata.get("category", "services_support")  # Fallback vers existant
+            return metadata.get("category", "service_support")
         except Exception as e:
             logger.warning(f"Impossible de récupérer la catégorie pour {resource_id}: {e}")
-            return "services_support"
+            return "service_support"
     
     def start_geographic_validation(self, resource_id: str) -> bool:
         """Démarre la validation géographique d'une ressource découverte"""
@@ -456,7 +454,7 @@ class DualValidationSystem:
         """Notes spécifiques par catégorie pour guider la validation"""
         
         notes_by_category = {
-            "contact_urgence": {
+            "service_support": {
                 "geographic": [
                     "Vérifier que le numéro est gratuit et accessible",
                     "Confirmer les horaires de disponibilité",

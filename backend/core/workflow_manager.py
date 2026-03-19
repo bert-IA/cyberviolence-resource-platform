@@ -161,7 +161,7 @@ class ResourceWorkflowManager:
         else:
             # Métadonnées par défaut pour compatibilité rétrograde
             unified_entry["metadata"] = {
-                "category": "services_support",  # Valeur par défaut (existant)
+                "category": "service_support",
                 "urgency_level": "normal",
                 "contact_type": "phone",
                 "availability": "business_hours", 
@@ -317,7 +317,7 @@ class ResourceWorkflowManager:
         Récupère les ressources par catégorie
         
         Args:
-            category: Catégorie de ressource (contact_urgence, procedure_plateforme, etc.)
+            category: Catégorie de ressource (service_support, procedure_plateforme, signalement_autorite)
             status: Statut de workflow optionnel pour filtrer davantage
         """
         filtered_resources = {}
@@ -359,12 +359,11 @@ class ResourceWorkflowManager:
             "service_support": 0,
             "procedure_plateforme": 0,
             "signalement_autorite": 0,
-            "contact_urgence": 0    # alias V1
         }
         
         for resource_id, resource_data in self.unified_data.items():
             if resource_data.get("country_code") == country_code:
-                category = resource_data.get("metadata", {}).get("category", "services_support")
+                category = resource_data.get("metadata", {}).get("category", "service_support")
                 if category in stats:
                     stats[category] += 1
         

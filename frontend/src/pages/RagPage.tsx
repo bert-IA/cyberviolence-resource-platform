@@ -7,6 +7,7 @@ import { type Resource } from "../services/api";
 import { RagValidationModal } from "../components/features/RagValidationModal";
 import { useValidateResource } from "../hooks/useValidateResource";
 import { getLanguageName, getCountryName } from "../utils/formatters";
+import { AddResourceModal } from "../components/features/AddResourceModal";
 
 
 export function RagPage() {
@@ -17,6 +18,7 @@ export function RagPage() {
 
     //état de la ressource selectionnées
     const [selectedResource, setSelectedResource] = useState<Resource | null>(null)
+    const [showAddModal, setShowAddModal] = useState(false)
 
     // récupération des  ressources à valider pour le RAG
     const resources = useResources('critical_pending')
@@ -82,52 +84,64 @@ export function RagPage() {
     return (
         <div className="p-6">
             {/* En-tête */}
-            <div className="mb-8">
-                <h2 className="text-3xl font-bold text-gray-900 mb-2">
-                    📋 Ressources en attente de validation RAG
-                </h2>
-                <p className="text-gray-600">
-                    {resources.data?.length || 0} ressource(s) à traiter
-                </p>
-            </div>
-            {/* Zone 0 — boutons filtre langue */}
-            <div className="mb-4">
-                <h3 className="text-xl font-semibold text-gray-800 mb-4">🌐 Filtrer par langue</h3>
-                <div className="flex gap-2 flex-wrap">
-                    <Button
-                        label={`Toutes (${resources.data?.length || 0})`}
-                        onClick={() => setLanguageCode(null)}
-                        variant={languageCode === null ? 'tab-active' : 'tab'}
-                    />
-                    {languages.map(lang => (
-                        <Button
-                            key={lang}
-                            label={`${getLanguageName(lang)} (${resources.data?.filter(r => r.language === lang).length ?? 0})`}
-                            onClick={() => setLanguageCode(lang)}
-                            variant={languageCode === lang ? 'tab-active' : 'tab'}
-                        />
-                    ))}
+            <div className="flex items-center justify-between mb-6">
+                <div>
+                    <h2 className="text-3xl font-bold text-gray-900">📋 Validation RAG</h2>
+                    <p className="text-gray-500 text-sm mt-1">{filtered.length} ressource(s) affichée(s) sur {resources.data?.length || 0}</p>
                 </div>
+                <Button
+                    label="+ Ajout Manuel d'une ressource"
+                    onClick={() => setShowAddModal(true)}
+                    variant="secondary"
+                />
             </div>
 
-            {/* Zone 1 — boutons filtre pays */}
-            <div className="mb-6">
-                <h3 className="text-xl font-semibold text-gray-800 mb-4">🌍 Filtrer par pays</h3>
-                <div className="flex gap-2 flex-wrap">
-                    <Button
-                        label={`Tous (${filteredLanguage.length})`}
-                        onClick={() => setCountryCode(null)}
-                        variant={countryCode === null ? 'tab-active' : 'tab'}
-                    />
-                    {countries.map(code => (
-                        <Button
-                            key={code}
-                            label={`${getCountryName(code)} (${filteredLanguage.filter(r => r.country_code === code).length})`}
-                            onClick={() => setCountryCode(code)}
-                            variant={countryCode === code ? 'tab-active' : 'tab'}
-                        />
-                    ))}
+            {/* Toolbar filtres */}
+            <div className="flex items-center gap-6 bg-gray-50 border border-gray-200 rounded-xl px-6 py-4 mb-6">
+                <span className="text-base font-medium text-gray-500 shrink-0">Filtrer par</span>
+
+                <div className="flex items-center gap-3">
+                    <label className="text-base text-gray-600 shrink-0">🌐 Langue</label>
+                    <select
+                        value={languageCode ?? ''}
+                        onChange={e => { setLanguageCode(e.target.value || null); setCountryCode(null) }}
+                        className="border border-gray-300 rounded-lg px-4 py-2 text-base bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                        <option value="">Toutes</option>
+                        {languages.map(lang => (
+                            <option key={lang} value={lang}>{getLanguageName(lang)}</option>
+                        ))}
+                    </select>
                 </div>
+
+                <div className="w-px h-6 bg-gray-300" />
+
+                <div className="flex items-center gap-3">
+                    <label className="text-base text-gray-600 shrink-0">🌍 Pays</label>
+                    <select
+                        value={countryCode ?? ''}
+                        onChange={e => setCountryCode(e.target.value || null)}
+                        disabled={countries.length === 0}
+                        className="border border-gray-300 rounded-lg px-4 py-2 text-base bg-white focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                    >
+                        <option value="">Tous</option>
+                        {countries.map(code => (
+                            <option key={code} value={code}>{getCountryName(code)}</option>
+                        ))}
+                    </select>
+                </div>
+
+                {(languageCode || countryCode) && (
+                    <>
+                        <div className="w-px h-6 bg-gray-300" />
+                        <button
+                            onClick={() => { setLanguageCode(null); setCountryCode(null) }}
+                            className="text-base text-purple-600 hover:text-purple-800 font-medium"
+                        >
+                            Réinitialiser
+                        </button>
+                    </>
+                )}
             </div>
 
             {/* Zone 2 — liste des ressources */}
@@ -166,6 +180,10 @@ export function RagPage() {
                     onReject={handleRejectResource}
                     onValidate={handleValidateResource} />
             }
+            {showAddModal && <AddResourceModal
+                onClose={() => setShowAddModal(false)}
+                onSucces={() => resources.refetch()}
+            />}
         </div >
     )
 }

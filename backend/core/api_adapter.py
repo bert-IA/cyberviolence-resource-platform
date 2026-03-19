@@ -417,7 +417,7 @@ class LegacyAPIAdapter:
         Implémente la stratégie lean selon logic_sourcing_ressources.md
         
         Args:
-            category: Type de ressource (contact_urgence, procedure_plateforme, etc.)
+            category: Type de ressource (service_support, procedure_plateforme, signalement_autorite)
             country_code: Code pays (FR, DE, ES, etc.)
             language: Langue pour le prompt
             max_resources: Nombre max de ressources à découvrir (lean = 3-6 selon catégorie)
@@ -689,7 +689,6 @@ class LegacyAPIAdapter:
                 "service_support": 5,
                 "procedure_plateforme": 5,
                 "signalement_autorite": 4,
-                "contact_urgence": 3    # alias V1
             }
             
             total_discovered = 0
@@ -761,13 +760,6 @@ class LegacyAPIAdapter:
         """Détermine les métadonnées selon la catégorie de ressource"""
         
         metadata_by_category = {
-            "contact_urgence": {
-                "urgency_level": "immediate" if "24h" in resource_data.get("description", "") else "normal",
-                "contact_type": "phone",
-                "availability": "24h" if "24h" in resource_data.get("description", "") else "business_hours",
-                "official_status": "government" if any(word in resource_data.get("name", "").lower() 
-                                                     for word in ["ministère", "gouvernement", "service public"]) else "certified"
-            },
             "procedure_plateforme": {
                 "urgency_level": "normal",
                 "contact_type": "online",
