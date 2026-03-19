@@ -1,4 +1,5 @@
 import { useCountriesLanguagesConfig } from '../hooks/useCountriesLanguagesConfig'
+import { getLanguageName, getCountryName } from '../utils/formatters'
 import { LanguageCard } from '../components/features/LanguageCard'
 import { LoadingSpinner } from '../components/ui/LoadingSpinner'
 import { ErrorMessage } from '../components/ui/ErrorMessage'
@@ -16,9 +17,7 @@ export function ConfigurationPage() {
 
     const queryClient = useQueryClient()
 
-    function getLanguageName(code: string): string {
-        return new Intl.DisplayNames([code.toLowerCase()], { type: 'language' }).of(code.toLowerCase()) ?? code
-    }
+
     const addLanguageMutation = useMutation({
         mutationFn: () => addLanguage(newLanguageCode, {
             name: getLanguageName(newLanguageCode),
@@ -57,7 +56,7 @@ export function ConfigurationPage() {
                                         {Object.keys(config.languages).length}
                                     </div>
                                     <span className="text-xs text-blue-600 mt-1">
-                                        {Object.keys(config?.languages ?? {}).join(', ')}
+                                        {Object.keys(config?.languages ?? {}).map(getLanguageName).join(', ')}
                                     </span>
                                 </div>
                                 <div>

@@ -227,16 +227,41 @@ async def get_workflow_status():
 
 @router.get("/admin/export/rag-ready")
 async def export_rag_ready_resources():
+    """
+    Export des documents RAG prêts à être consommés par un système RAG externe.
+
+    Retourne une liste plate de documents, chacun étant un enregistrement complet
+    et autonome (identité, contact, géographie, catégorie, périmètre, qualité).
+    Aucune donnée de workflow n'est incluse.
+    """
     try:
         adapter = get_api_adapter()
         rag_data = adapter.workflow_manager.get_rag_resources()
-        if not rag_data:
-            rag_data = adapter.workflow_manager.get_resources_by_status("rag_ready")
+
+        # Convertir le dict {id: document} en liste de documents avec l'id inclus
+        documents = [
+            {"id": resource_id, **doc}
+            for resource_id, doc in rag_data.items()
+        ]
+
+        # Groupements utiles pour le consommateur
+        by_language: dict = {}
+        by_category: dict = {}
+        for doc in documents:
+            lang = doc.get("language", "")
+            by_language[lang] = by_language.get(lang, 0) + 1
+            cat = doc.get("category", "")
+            by_category[cat] = by_category.get(cat, 0) + 1
+
         return {
             "success": True,
-            "rag_resources": rag_data,
-            "total_resources": len(rag_data),
+            "total": len(documents),
             "export_timestamp": datetime.now().isoformat(),
+            "summary": {
+                "by_language": by_language,
+                "by_category": by_category,
+            },
+            "documents": documents,
         }
     except Exception as e:
         logger.error(f"Erreur export_rag_ready: {e}")

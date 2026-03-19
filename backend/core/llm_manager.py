@@ -125,13 +125,14 @@ class GeminiClient(BaseLLMClient):
                 raise ValueError("Clé API Gemini manquante")
             
             genai.configure(api_key=self.api_key)
-            model = genai.GenerativeModel(
-                self.config.model,
-                system_instruction=system_prompt if system_prompt else None
-            )
+            model = genai.GenerativeModel(self.config.model)
+            
+            # system_instruction= introduced in google-generativeai 0.5.0+
+            # For compatibility with older versions, we prepend it to the user prompt.
+            full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
             
             response = model.generate_content(
-                prompt,
+                full_prompt,
                 generation_config=genai.types.GenerationConfig(
                     temperature=self.config.temperature,
                     max_output_tokens=self.config.max_tokens,

@@ -7,6 +7,7 @@ import { DiscoveryPage } from './pages/DiscoveryPage'
 import { ValidationPage } from './pages/ValidationPage/Index'
 import { NotFound } from './pages/NotFound'
 import { Toaster } from 'react-hot-toast'
+import { RagPage } from './pages/RagPage'
 
 export function App() {
   return (
@@ -36,9 +37,8 @@ export function App() {
           <Route path="/decouverte" element={<DiscoveryPage />} />
           <Route path="/validation" element={<ValidationPage />} />
 
-          {/* Pages futures (décommente quand prêt) */}
-          {/* <Route path="/validation" element={<ValidationPage />} /> */}
-          {/* <Route path="/rag" element={<RagPage />} /> */}
+
+          <Route path="/rag" element={<RagPage />} />
         </Route>
 
         {/* Route 404 */}

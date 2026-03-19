@@ -193,7 +193,7 @@ export function ReviewStep({ state, dispatch }: ValidationStepProps) {
                 <Button
                     label={`🗑️ Rejeter (${state.selectedIds.length})`}
                     onClick={handleReject}
-                    variant="secondary"
+                    variant="danger"
                     disabled={state.selectedIds.length === 0 || validateBatch.isPending}
                 />
             </div>

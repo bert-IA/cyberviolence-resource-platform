@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { DiscoveryFilters } from '../../services/api'
+import { getLanguageName } from '../../utils/formatters.ts'
 import { Button } from '../ui/Button'
 import { useCountriesLanguagesConfig } from '../../hooks/useCountriesLanguagesConfig'
 
@@ -68,7 +69,7 @@ export function DiscoveryForm({ onSubmit, loading }: DiscoveryFormProps) {
                 >
                     {Object.keys(config?.languages ?? {}).map(lang => (
                         <option key={lang} value={lang}>
-                            {lang}
+                            {getLanguageName(lang)}
                         </option>
                     ))}
                 </select>

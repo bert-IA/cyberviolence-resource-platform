@@ -224,65 +224,56 @@ class ResourceWorkflowManager:
         return True
     
     def _update_rag_resources(self, resource_id: str):
-        """Copie une ressource finalisée vers rag_resources.json pour export"""
-        
-        # VALIDATION STRICTE : s'assurer que la source existe et est rag_ready
+        """Produit le document final exporté dans rag_resources.json.
+
+        Ce document est destiné à être consommé par un RAG externe.
+        Il doit être plat, complet et ne contenir que des champs utiles.
+        Aucune donnée de workflow (statuts, historique) n'est incluse.
+        """
         if resource_id not in self.unified_data:
             logger.error(f"DÉSYNCHRONISATION ÉVITÉE: resource_id {resource_id} absent de unified_data")
             return False
-        
-        unified_resource = self.unified_data[resource_id]
-        current_status = unified_resource.get("workflow_status")
-        
-        if current_status != "rag_ready":
-            logger.error(f"DÉSYNCHRONISATION ÉVITÉE: resource_id {resource_id} pas en status rag_ready (statut: {current_status})")
+
+        r = self.unified_data[resource_id]
+
+        if r.get("workflow_status") != "rag_ready":
+            logger.error(f"DÉSYNCHRONISATION ÉVITÉE: {resource_id} pas en rag_ready (statut: {r.get('workflow_status')})")
             return False
-        
-        # Récupérer les données de contact de manière robuste
-        phone = (unified_resource.get("core_data", {}).get("phone") or 
-                unified_resource.get("phone") or 
-                unified_resource.get("contact_info", {}).get("phone") or "")
-        
-        email = (unified_resource.get("core_data", {}).get("email") or 
-                unified_resource.get("email") or 
-                unified_resource.get("contact_info", {}).get("email") or "")
-        
-        website = (unified_resource.get("core_data", {}).get("website") or 
-                  unified_resource.get("website") or "")
-        
-        organization_name = (unified_resource.get("core_data", {}).get("organization_name") or 
-                           unified_resource.get("organization_name") or "")
-        
-        description = (unified_resource.get("core_data", {}).get("description") or 
-                      unified_resource.get("description") or "")
-        
-        country_name = (unified_resource.get("core_data", {}).get("country_name") or 
-                       unified_resource.get("country_name") or "")
-        
-        # Format optimisé pour RAG (avec toutes les données disponibles)
+
+        # ── Identité ────────────────────────────────────────────────────────
+        # Le champ s'appelle "name" à la racine (parsé depuis le LLM),
+        # "organization_name" dans les anciennes ressources V1.
+        organization_name = r.get("name") or r.get("organization_name") or ""
+
+        # ── Document RAG (format plat, aucune donnée de workflow) ───────────
         rag_entry = {
+            # Identité
             "organization_name": organization_name,
-            "website": website,
-            "description": description,
-            "phone": phone,
-            "email": email,
-            "country_name": country_name,
-            "contact_info": {
-                "phone": phone,
-                "email": email
-            },
-            "metadata": {
-                "country": country_name,
-                "language": unified_resource.get("language", "FR"),
-                "type": unified_resource.get("resource_type", "association"),
-                "finalized_at": datetime.now().isoformat(),
-                "source": "llm_discovery"
-            }
+            "description":       r.get("description") or "",
+            # Contact
+            "website":           r.get("website") or "",
+            "direct_link":       r.get("direct_link") or "",
+            "phone":             r.get("phone") or "",
+            "email":             r.get("email") or "",
+            # Géographie & langue
+            "country_name":      r.get("country_name") or r.get("country") or "",
+            "country_code":      r.get("country_code") or "",
+            "language":          r.get("language") or "FR",
+            # Catégorie & périmètre (champs V2)
+            "category":          r.get("metadata", {}).get("category") or "",
+            "action_type":       r.get("action_type") or "",
+            "is_governmental":   r.get("is_governmental") or False,
+            "scope_audience":    r.get("scope_audience") or "",
+            "scope_violence":    r.get("scope_violence") or "",
+            "scope_anonymous":   r.get("scope_anonymous") or False,
+            # Qualité & traçabilité
+            "confidence_score":  r.get("confidence_score") or 0.0,
+            "finalized_at":      datetime.now().isoformat(),
         }
-        
+
         self.rag_data[resource_id] = rag_entry
         self._save_json(self.rag_data, self.rag_file)
-        logger.info(f"Resource {resource_id} successfully added to RAG")
+        logger.info(f"Resource {resource_id} ajoutée au RAG export: {organization_name}")
         return True
     
     def sync_rag_data(self):

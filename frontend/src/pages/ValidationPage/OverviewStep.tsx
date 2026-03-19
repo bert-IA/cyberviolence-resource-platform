@@ -74,7 +74,7 @@ export function OverviewStep({ state, dispatch }: ValidationStepProps) {
                                 key={code}
                                 label={`${countryInfo.label} (${countryInfo.count})`}
                                 onClick={() => handleCountryClick(code)}
-                                variant="secondary"
+                                variant="tab"
                             />
                         )
                     })}
@@ -92,7 +92,7 @@ export function OverviewStep({ state, dispatch }: ValidationStepProps) {
                             key={category}
                             label={`${category} (${count})`}
                             onClick={() => handleCategoryClick(category)}
-                            variant="secondary"
+                            variant="tab"
                         />
                     ))}
                 </div>

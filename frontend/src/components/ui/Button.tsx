@@ -1,7 +1,7 @@
 interface ButtonProps {
     label: string
     onClick: () => void
-    variant?: 'primary' | 'secondary' | 'tab' | 'tab-active'
+    variant?: 'primary' | 'secondary' | 'danger' | 'tab' | 'tab-active'
     disabled?: boolean
     type?: 'button' | 'submit' | 'reset'
 }
@@ -20,6 +20,7 @@ export function Button({
     const variantStyles = {
         primary: "bg-green-500 text-gray-700 hover:bg-purple-600",
         secondary: "bg-blue-400 text-gray-700 hover:bg-green-600",
+        danger: "bg-red-600 text-white hover:bg-red-700",
         tab: "bg-purple-300 text-gray-700 hover:bg-gray-200",
         'tab-active': "bg-purple-600 text-white"
     }[variant]

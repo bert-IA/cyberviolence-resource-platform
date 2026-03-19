@@ -8153,7 +8153,7 @@ export function ResourceValidationCard({
             📧 {resource.email}
           </span>
         )}
-        {resource.website && (
+        {resource.website && (. Peux
           <a 
             href={resource.website} 
             target="_blank" 

@@ -3,6 +3,7 @@ import { Button } from '../ui/Button'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { removeCountryFromLanguage, deleteLanguage, addCountryToLanguage, autoPopulateCountriesByLanguage } from '../../services/api'
 import toast from 'react-hot-toast'
+import { getLanguageName, getFlagEmoji } from '../../utils/formatters'
 
 interface Country {
     country_name: string
@@ -14,14 +15,6 @@ interface LanguageCardProps {
     languageCode: string
     countries: Country[]
     searchTerms: string[]
-}
-
-function getFlagEmoji(countryCode: string): string {
-    return countryCode
-        .toUpperCase()
-        .split('')
-        .map(char => String.fromCodePoint(127397 + char.charCodeAt(0)))
-        .join('')
 }
 
 export function LanguageCard({ languageCode, countries, searchTerms }: LanguageCardProps) {
@@ -83,8 +76,9 @@ export function LanguageCard({ languageCode, countries, searchTerms }: LanguageC
                         {/* Tooltip sur le titre */}
                         <div className="relative group inline-block">
                             <h3 className="text-xl font-bold text-purple-900 cursor-help">
-                                {languageCode}
+                                {getLanguageName(languageCode)}
                             </h3>
+                            <span className="text-xs text-purple-400 font-mono">{languageCode.toUpperCase()}</span>
                             <div className="invisible group-hover:visible absolute bottom-full left-0 
                             bg-gray-400 text-white text-x1 rounded-lg p-2 w-48 z-10">
                                 <p className='text-center font-bold mb-1'>Mots-clés de recherche</p>
