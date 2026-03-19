@@ -144,20 +144,25 @@ export function RagValidationModal({
                 </div>
 
                 <div className="flex justify-end gap-3 pt-4 border-t">
+                    {resource.workflow_status !== 'rag_ready' && (
+                        <>
+                            <Button
+                                label="Rejeter"
+                                onClick={() => onReject(resource.id)}
+                                variant="danger"
+                            />
+                            <Button
+                                label="Valider"
+                                onClick={() => handleValidate()}
+                                variant="primary"
+                            />
+                        </>
+                    )}
                     <Button
-                        label="Rejeter"
-                        onClick={() => onReject(resource.id)}
-                        variant="danger"
-                    />
-                    <Button
-                        label="Valider"
-                        onClick={() => handleValidate()}
-                        variant="primary"
-                    />
-                    <Button
-                        label="Annuler"
+                        label={resource.workflow_status === 'rag_ready' ? 'Retour' : 'Annuler'}
                         onClick={onClose}
-                        variant="secondary" />
+                        variant="secondary"
+                    />
                 </div>
 
             </div>
