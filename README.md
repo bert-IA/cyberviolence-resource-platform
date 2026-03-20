@@ -19,54 +19,57 @@ resource-discovery-platform/
 └── docs/             → Documentation technique
 ```
 
-## 🚀 Quick Start - Backend
+## 🚀 Quick Start
 
 ### Prérequis
 - Python 3.11+
+- Node.js 18+
 - Clé API Google Gemini (gratuite sur https://ai.google.dev)
 
-### Installation
+---
+
+### Backend
 
 ```bash
 cd backend
 
 # Créer l'environnement virtuel
 python3 -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
 # Installer les dépendances
 pip install -r requirements.txt
 
-# Configurer l'environnement
-cp .env.example .env  # Puis éditer avec ta clé API
+# Configurer les variables d'environnement
+cp .env.example .env
+# Éditer .env et renseigner clé API
+
+# Démarrer le serveur
+./start_server.sh
+# ou manuellement :
+uvicorn admin_api:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Configuration `.env`
+API disponible sur : http://localhost:8000
+Health check : http://localhost:8000/health
+
+---
+
+### Frontend
 
 ```bash
-# Provider LLM (gemini recommandé)
-LLM_PROVIDER=gemini
+cd frontend
 
-# Clé API Google Gemini
-GEMINI_API_KEY=AIza...  # Obtenir sur https://ai.google.dev
+# Installer les dépendances
+npm install
 
-# Optionnel: OpenRouter (backup)
-OPENROUTER_API_KEY=sk-or-v1-...
+# Démarrer en mode développement
+npm run dev
 ```
 
-### Démarrage
+Interface disponible sur : http://localhost:5173
 
-```bash
-# Mode développement (auto-reload)
-uvicorn admin_api:app --reload --host 0.0.0.0 --port 8001
-
-# Ou mode production
-python3 admin_api.py
-```
-
-**API disponible sur** : http://localhost:8001
-
-**Health check** : http://localhost:8001/health
+---
 
 ## 🔗 Endpoints Principaux
 
@@ -137,12 +140,6 @@ python3 list_gemini_models.py
 # Health check
 curl http://localhost:8001/health
 ```
-
-## 📚 Documentation
-
-- [Architecture Complète](docs/DECOUVERTE_SYSTEME_EXISTANT.md)
-- [Guide React](docs/JOUR_1_SETUP.md) (frontend à venir)
-- [Workflow Métier](docs/ANALYSE_WORKFLOW_METIER.md)
 
 ## 🛠️ Technologies
 

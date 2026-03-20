@@ -5,6 +5,7 @@ __pycache__/
 *.so
 .Python
 venv/
+.venv/
 env/
 ENV/
 *.egg-info/
@@ -26,7 +27,15 @@ ENV/
 # OS
 .DS_Store
 Thumbs.db
+
+# Logs
 *.log
+backend/server.log
+backend/backend.log
+
+# Données de travail (non partagées)
+backend/working_resources.json
+backend/rag_resources.json
 
 # Data files (exclure pour ne pas committer les données sensibles)
 *.json
