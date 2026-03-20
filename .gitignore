@@ -36,12 +36,7 @@ backend/backend.log
 # Données de travail (non partagées)
 backend/working_resources.json
 backend/rag_resources.json
-
-# Data files (exclure pour ne pas committer les données sensibles)
-*.json
-!package.json
-!tsconfig.json
-!*.config.json
+backend/config.json
 scraped_data/
 logs/
 uploads/
