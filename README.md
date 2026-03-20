@@ -14,9 +14,8 @@ Ce projet permet aux administrateurs de :
 
 ```
 resource-discovery-platform/
-├── backend/          → FastAPI + Python 3.11 + Google Gemini LLM
-├── frontend/         → React 18 + TypeScript + Vite (en cours)
-└── docs/             → Documentation technique
+├── backend/          → FastAPI + Python 3.12 + Google Gemini LLM
+└── frontend/         → React 19 + TypeScript + Vite
 ```
 
 ## 🚀 Quick Start
@@ -149,8 +148,8 @@ curl http://localhost:8001/health
 - Google Gemini 2.5 Flash (LLM)
 - PostgreSQL (optionnel pour analytics)
 
-**Frontend (à venir):**
-- React 18
+**Frontend :**
+- React 19
 - TypeScript
 - Vite
 - TanStack Query
