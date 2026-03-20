@@ -54,8 +54,8 @@ backend/
 ├── response_service.py       # Helpers ResponseService / ErrorHandler / OperationLogger
 ├── requirements.txt
 ├── config.json               # Configuration persistante pays/langues (géré par ConfigManager)
-├── working_resources.json    # Ressources en cours de workflow (discovered → rag_ready)
-├── rag_resources.json        # Ressources finalisées, prêtes pour le RAG
+├── working_resources.json    # Ressources en cours de workflow (discovered → rag_ready) — non versionné (.gitignore)
+├── rag_resources.json        # Ressources finalisées, prêtes pour le RAG — non versionné (.gitignore)
 │
 ├── routers/                  # Couche HTTP — un fichier par domaine
 │   ├── auth.py               # verify_admin_token (Bearer admin-token-2024)
@@ -338,7 +338,7 @@ Implémenté dans `api_adapter.py`, le parser est **très tolérant** :
 
 | Provider | Classe | Clé env | Notes |
 |----------|--------|---------|-------|
-| Google Gemini | `GeminiClient` | `GEMINI_API_KEY` | `google-generativeai` 0.3.x — system_prompt préfixé dans le user message |
+| Google Gemini | `GeminiClient` | `GEMINI_API_KEY` | `google-generativeai` 0.8.x — system_prompt préfixé dans le user message |
 | OpenRouter | `OpenRouterClient` | `OPENROUTER_API_KEY` | REST `/v1/chat/completions` — system_prompt via `{"role":"system"}` |
 
 **Retry logic :** 3 tentatives, délai exponentiel. Rate-limiting HTTP 429 → attente 60 s × tentative.
