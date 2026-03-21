@@ -8,6 +8,7 @@ import { RagValidationModal } from "../components/features/RagValidationModal";
 import { useValidateResource } from "../hooks/useValidateResource";
 import { getLanguageName, getCountryName } from "../utils/formatters";
 import { AddResourceModal } from "../components/features/AddResourceModal";
+import { toast } from "react-hot-toast";
 
 
 export function RagPage() {
@@ -54,9 +55,11 @@ export function RagPage() {
     const handleRejectResource = (id: string) => {
         rejectMutation.mutate(id, {
             onSuccess: () => {
+                toast.success('Ressource rejetée')
                 resources.refetch()
                 setSelectedResource(null)
-            }
+            },
+            onError: () => toast.error('Échec de la validation'),
         })
     }
 
@@ -64,9 +67,11 @@ export function RagPage() {
     const handleValidateResource = (id: string) => {
         validateMutation.mutate(id, {
             onSuccess: () => {
+                toast.success('Ressource validée')
                 resources.refetch()
                 setSelectedResource(null)
-            }
+            },
+            onError: () => toast.error('Échec de la validation'),
         })
     }
 

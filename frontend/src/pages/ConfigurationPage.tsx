@@ -6,7 +6,7 @@ import { ErrorMessage } from '../components/ui/ErrorMessage'
 import { addLanguage } from '../services/api'
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import toast from 'react-hot-toast'
+import { toast } from 'react-hot-toast'
 import { Button } from '../components/ui/Button'
 
 export function ConfigurationPage() {
@@ -30,8 +30,8 @@ export function ConfigurationPage() {
             queryClient.invalidateQueries({ queryKey: ['config', 'languages'] })
             setNewLanguageCode('')
             setShowForm(false)
-        }
-
+        },
+        onError: () => toast.error(`Echec de l'ajout ${getLanguageName(newLanguageCode)}`)
     })
 
     return (

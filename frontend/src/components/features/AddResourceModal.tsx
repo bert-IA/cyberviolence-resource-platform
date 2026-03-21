@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { fetchLanguagesConfig, enrichResource, createResource, type Resource } from "../../services/api";
 import { Button } from "../ui/Button";
+import toast from "react-hot-toast";
 
 
 interface AddResourceModalProps {
@@ -74,16 +75,29 @@ export function AddResourceModal({ onClose, onSucces }: AddResourceModalProps) {
     const isFormValid = !!(form.name && form.language && form.country_code && form.category)
 
     const handleSearch = async () => {
-        const result = await enrichMutation.mutateAsync(form)
-        setPreviewData(result)
-        setStep('preview')
+        try {
+            const result = await enrichMutation.mutateAsync(form)
+            toast.success('Resource trouvée')
+            setPreviewData(result)
+            setStep('preview')
+        } catch {
+            toast.error('Ressource non trouvée')
+        }
     }
 
     const handleConfirm = async () => {
-        if (!previewData) return
-        await createMutation.mutateAsync(previewData)
-        onSucces()
-        onClose()
+        if (!previewData) {
+            toast.error('Aucune donnée à confirmer')
+            return
+        }
+        try {
+            await createMutation.mutateAsync(previewData)
+            toast.success('Resource ajoutée')
+            onSucces()
+            onClose()
+        } catch {
+            toast.error('Ressource non ajoutée')
+        }
     }
 
     return (
@@ -110,8 +124,8 @@ export function AddResourceModal({ onClose, onSucces }: AddResourceModalProps) {
                                             type="button"
                                             onClick={() => handleLanguageChange(lang.code)}
                                             className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${active
-                                                    ? 'bg-purple-600 text-white border-purple-600'
-                                                    : 'bg-white text-gray-700 border-gray-300 hover:border-purple-400 hover:text-purple-700'
+                                                ? 'bg-purple-600 text-white border-purple-600'
+                                                : 'bg-white text-gray-700 border-gray-300 hover:border-purple-400 hover:text-purple-700'
                                                 }`}
                                         >
                                             {LANG_DISPLAY[lang.code] ?? lang.code}
@@ -162,8 +176,8 @@ export function AddResourceModal({ onClose, onSucces }: AddResourceModalProps) {
                                             type="button"
                                             onClick={() => handleChange('category', cat.value)}
                                             className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${active
-                                                    ? 'bg-purple-600 text-white border-purple-600'
-                                                    : 'bg-white text-gray-700 border-gray-300 hover:border-purple-400 hover:text-purple-700'
+                                                ? 'bg-purple-600 text-white border-purple-600'
+                                                : 'bg-white text-gray-700 border-gray-300 hover:border-purple-400 hover:text-purple-700'
                                                 }`}
                                         >
                                             {cat.label}
@@ -172,12 +186,6 @@ export function AddResourceModal({ onClose, onSucces }: AddResourceModalProps) {
                                 })}
                             </div>
                         </div>
-
-                        {enrichMutation.isError && (
-                            <p className="text-sm text-red-600">
-                                Erreur : {enrichMutation.error instanceof Error ? enrichMutation.error.message : 'Une erreur est survenue'}
-                            </p>
-                        )}
 
                         <div className="flex justify-end gap-3 pt-2">
                             <Button label="Annuler" onClick={onClose} variant="secondary" />
@@ -252,12 +260,6 @@ export function AddResourceModal({ onClose, onSucces }: AddResourceModalProps) {
                             <Field label="Type d'action" value={previewData.action_type} />
                             <Field label="Périmètre de signalement" value={previewData.scope_signalement} />
                         </div>
-
-                        {createMutation.isError && (
-                            <p className="text-sm text-red-600">
-                                Erreur : {createMutation.error instanceof Error ? createMutation.error.message : 'Une erreur est survenue'}
-                            </p>
-                        )}
 
                         <div className="flex justify-end gap-3 pt-2">
                             <Button label="Recommencer" onClick={() => setStep('form')} variant="secondary" />

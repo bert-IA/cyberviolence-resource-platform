@@ -2,6 +2,7 @@ import { useState } from "react";
 import { usePatchResource } from '../../hooks/usePatchResource'
 import { type Resource } from "../../services/api";
 import { Button } from "../ui/Button";
+import { toast } from "react-hot-toast";
 
 interface RagValidationModalProps {
     resource: Resource
@@ -31,8 +32,13 @@ export function RagValidationModal({
     const patchMutation = usePatchResource()
 
     const handleValidate = async () => {
-        await patchMutation.mutateAsync({ id: resource.id, data: form })
-        onValidate(resource.id)
+        try {
+            await patchMutation.mutateAsync({ id: resource.id, data: form })
+            toast.success('Ressource validée')
+            onValidate(resource.id)
+        } catch {
+            toast.error('Échec de la validation')
+        }
     }
 
     return (

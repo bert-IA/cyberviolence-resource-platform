@@ -6,6 +6,7 @@ import { DiscoveredResourcesList } from '../components/features/DiscoveredResour
 import { LoadingSpinner } from '../components/ui/LoadingSpinner'
 import { ErrorMessage } from '../components/ui/ErrorMessage'
 import type { DiscoveryFilters } from '../services/api'
+import toast from 'react-hot-toast'
 
 // Décision : useValidateBatch, ValidationActions et hiddenIds supprimés.
 // Les actions (approuver/rejeter) appartiennent à ValidationPage.
@@ -13,28 +14,30 @@ import type { DiscoveryFilters } from '../services/api'
 
 export function DiscoveryPage() {
     const discovery = useDiscoverResources()
-    const navigate  = useNavigate()
+    const navigate = useNavigate()
 
     // Mesure de la durée réelle côté frontend
     // useRef car on n'a pas besoin de déclencher un re-render au démarrage
     const startTimeRef = useRef<number | null>(null)
-    const elapsedRef   = useRef<string | null>(null)
+    const elapsedRef = useRef<string | null>(null)
 
     const handleSearch = (filters: DiscoveryFilters) => {
         startTimeRef.current = Date.now()
-        elapsedRef.current   = null
+        elapsedRef.current = null
         discovery.mutate(filters, {
-            onSuccess: () => {
+            onSuccess: (data) => {
                 if (startTimeRef.current) {
                     const seconds = Math.round((Date.now() - startTimeRef.current) / 1000)
                     elapsedRef.current = `${seconds}s`
                 }
-            }
+                toast.success(`${data.total_discovered} ressource(s) découvertes`)
+            },
+            onError: () => toast.error("Erreur dans l'ajout des ressources")
         })
     }
 
     const allResources = discovery.data?.newly_discovered || []
-    const newCount     = allResources.filter(r => r.is_new === true).length
+    const newCount = allResources.filter(r => r.is_new === true).length
 
     return (
         <div className="p-6">
