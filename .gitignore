@@ -40,6 +40,7 @@ backend/config.json
 scraped_data/
 logs/
 uploads/
+RessourceSkam/
 
 # Node.js / React (frontend)
 node_modules/
