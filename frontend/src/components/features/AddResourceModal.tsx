@@ -97,6 +97,7 @@ export function AddResourceModal({ onClose, onSucces }: AddResourceModalProps) {
             onClose()
         } catch {
             toast.error('Ressource non ajoutée')
+            onClose()
         }
     }
 

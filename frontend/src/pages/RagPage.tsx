@@ -67,7 +67,6 @@ export function RagPage() {
     const handleValidateResource = (id: string) => {
         validateMutation.mutate(id, {
             onSuccess: () => {
-                toast.success('Ressource validée')
                 resources.refetch()
                 setSelectedResource(null)
             },
