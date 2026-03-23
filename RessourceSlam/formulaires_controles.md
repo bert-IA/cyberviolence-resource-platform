@@ -271,3 +271,185 @@ Pattern classique : cliquer sur le fond sombre ferme le modal, mais cliquer sur 
 | `stopPropagation` | Clic sur la boîte ne ferme pas le modal |
 | Props callbacks | Le modal délègue valider/rejeter au parent |
 | `useEffect([resource])` | Formulaire réinitialisé à chaque ouverture |
+
+---
+
+---
+
+# Le Context API React
+
+## Pourquoi le Context API ?
+
+Dans une application React, les données circulent normalement **de parent à enfant** via les props. Ça fonctionne bien pour 1 ou 2 niveaux, mais quand une donnée doit traverser 5 composants pour atteindre le bon endroit, on parle de **prop drilling** — passer une prop à travers tous les intermédiaires même s'ils ne l'utilisent pas.
+
+```
+App
+ └── MainLayout  (reçoit user, ne l'utilise pas)
+       └── Sidebar  (reçoit user, ne l'utilise pas)
+             └── UserAvatar  (utilise user ← le seul qui en a besoin)
+```
+
+Le **Context API** résout ça : il permet de rendre une valeur accessible à **n'importe quel composant de l'arbre**, sans la passer manuellement à chaque étage.
+
+---
+
+## Les 3 instructions à connaître
+
+### 1. `createContext` — créer le contexte
+
+```tsx
+import { createContext } from 'react'
+
+// On définit la forme des données du contexte
+interface AuthContextType {
+    token: string | null
+    login: (password: string) => Promise<boolean>
+    logout: () => void
+}
+
+// On crée le contexte avec une valeur par défaut
+export const AuthContext = createContext<AuthContextType | null>(null)
+```
+
+`createContext` crée un "canal de communication" global. La valeur par défaut ne sert que si un composant consomme le contexte sans avoir de Provider au-dessus — en pratique on la met à `null` et on gère ce cas.
+
+---
+
+### 2. `Provider` — distribuer la valeur
+
+Le Provider est le composant qui **fournit** la valeur à tous ses enfants. Il se place haut dans l'arbre (souvent dans `main.tsx` ou `App.tsx`) pour que toute l'app y ait accès.
+
+```tsx
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+    const [token, setToken] = useState<string | null>(
+        localStorage.getItem('admin_token')  // persistance entre les rechargements
+    )
+
+    const login = async (password: string): Promise<boolean> => {
+        // On vérifie le mot de passe en appelant le backend
+        const response = await fetch('http://localhost:8000/health', {
+            headers: { Authorization: `Bearer ${password}` }
+        })
+        if (response.ok) {
+            setToken(password)
+            localStorage.setItem('admin_token', password)
+            return true
+        }
+        return false
+    }
+
+    const logout = () => {
+        setToken(null)
+        localStorage.removeItem('admin_token')
+    }
+
+    return (
+        <AuthContext.Provider value={{ token, login, logout }}>
+            {children}
+        </AuthContext.Provider>
+    )
+}
+```
+
+---
+
+### 3. `useContext` — consommer la valeur
+
+N'importe quel composant enfant peut lire la valeur du contexte avec `useContext` :
+
+```tsx
+import { useContext } from 'react'
+import { AuthContext } from '../contexts/AuthContext'
+
+function Sidebar() {
+    const auth = useContext(AuthContext)
+
+    return (
+        <button onClick={auth?.logout}>
+            Se déconnecter
+        </button>
+    )
+}
+```
+
+En pratique, on crée un **hook personnalisé** pour encapsuler `useContext` et gérer le cas null :
+
+```tsx
+export function useAuth() {
+    const context = useContext(AuthContext)
+    if (!context) throw new Error('useAuth doit être utilisé dans AuthProvider')
+    return context
+}
+
+// Utilisation dans un composant :
+const { token, login, logout } = useAuth()
+```
+
+---
+
+## Ce qui va se passer dans l'application
+
+Le faux login de `resource-discovery-platform` va fonctionner ainsi :
+
+### Flux de connexion
+
+```
+App démarre
+    │
+    ├── AuthProvider lit localStorage
+    │       ├── token présent → utilisateur déjà connecté
+    │       └── pas de token → redirection LoginPage
+    │
+    ▼
+LoginPage
+    ├── Formulaire : champ mot de passe
+    └── handleSubmit()
+            │
+            ▼
+        login(password)  [dans AuthContext]
+            ├── GET /health avec Authorization: Bearer <password>
+            ├── 200 OK → token stocké dans state + localStorage → redirect /
+            └── 401/erreur → toast.error('Mot de passe incorrect')
+```
+
+### Flux de protection des routes
+
+```tsx
+// ProtectedRoute : redirige vers /login si pas de token
+function ProtectedRoute() {
+    const { token } = useAuth()
+    return token ? <Outlet /> : <Navigate to="/login" />
+}
+
+// Dans App.tsx :
+<Route element={<ProtectedRoute />}>
+    <Route element={<MainLayout />}>
+        <Route path="/" element={<MenuPage />} />
+        <Route path="/rag" element={<RagPage />} />
+        {/* toutes les routes protégées */}
+    </Route>
+</Route>
+```
+
+### Ce qui change dans `api.ts`
+
+Au lieu du token hardcodé :
+```ts
+// Avant
+export const AUTH_TOKEN = 'Bearer admin-token-2024'
+
+// Après : on lit le token depuis le localStorage
+export const getAuthHeader = () => ({
+    Authorization: `Bearer ${localStorage.getItem('admin_token') ?? ''}`
+})
+```
+
+### Résumé des fichiers à créer/modifier
+
+| Fichier | Action | Rôle |
+|---------|--------|------|
+| `src/contexts/AuthContext.tsx` | Créer | Contexte + Provider + `useAuth` hook |
+| `src/pages/LoginPage.tsx` | Créer | Formulaire mot de passe |
+| `src/components/layout/ProtectedRoute.tsx` | Créer | Garde les routes privées |
+| `src/App.tsx` | Modifier | Entourer les routes avec `AuthProvider` + `ProtectedRoute` |
+| `src/services/api.ts` | Modifier | Remplacer `AUTH_TOKEN` par `getAuthHeader()` |
